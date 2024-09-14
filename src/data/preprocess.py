@@ -1,24 +1,28 @@
-from monai.transforms import (
-    Compose, LoadImaged, AddChanneld, ScaleIntensityd,
-    Resized, RandRotate90d, RandFlipd, ToTensord
-)
+import monai.transforms as T
+from monai.transforms import Compose, RandFlip, RandRotate90, NormalizeIntensity, Resize, ToTensor
 
-def get_train_transforms():
-    return Compose([
-        LoadImaged(keys=["image"]),
-        AddChanneld(keys=["image"]),
-        ScaleIntensityd(keys=["image"]),
-        Resized(keys=["image"], spatial_size=(128, 128, 128)),
-        RandRotate90d(keys=["image"], prob=0.8, spatial_axes=[0, 2]),
-        RandFlipd(keys=["image"], spatial_axis=0, prob=0.5),
-        ToTensord(keys=["image", "label"])
+
+def preprocess_3d_image(image, target_size=(128, 128, 128)):
+    """
+    Preprocess a 3D image, including resizing, normalization, and augmentation.
+
+    Args:
+        image (numpy array or tensor): The 3D image to preprocess.
+        target_size (tuple): Desired output size for the image.
+
+    Returns:
+        Processed tensor.
+    """
+    # Define a series of transforms
+    transform = Compose([
+        Resize(spatial_size=target_size),  # Resize to a fixed 3D volume size
+        NormalizeIntensity(nonzero=True),  # Normalize intensity to 0 mean, 1 std dev
+        RandFlip(spatial_axis=(0, 1, 2)),  # Random flipping along all three axes
+        RandRotate90(prob=0.5, spatial_axes=(0, 1)),  # Random 90 degree rotation
+        ToTensor()  # Convert to PyTorch tensor
     ])
 
-def get_val_transforms():
-    return Compose([
-        LoadImaged(keys=["image"]),
-        AddChanneld(keys=["image"]),
-        ScaleIntensityd(keys=["image"]),
-        Resized(keys=["image"], spatial_size=(128, 128, 128)),
-        ToTensord(keys=["image", "label"])
-    ])
+    return transform(image)
+
+# Example usage with a 3D image (assuming `image` is loaded elsewhere)
+# processed_image = preprocess_3d_image(image)

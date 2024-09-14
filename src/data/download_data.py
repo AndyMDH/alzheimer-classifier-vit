@@ -1,15 +1,13 @@
+# src/data/download_data.py
 import os
 import requests
 
-def download_dataset(url, save_path):
+def download_mri_data(save_path="data/train"):
+    url = "http://example-dataset-link.com"  # Replace with actual dataset URL
     response = requests.get(url)
-    with open(save_path, 'wb') as f:
+    with open(os.path.join(save_path, "mri_data.zip"), "wb") as f:
         f.write(response.content)
-
-def main():
-    dataset_url = "https://example.com/alzheimer_dataset.zip"
-    save_path = os.path.join("data", "alzheimer_dataset.zip")
-    download_dataset(dataset_url, save_path)
+    # Extract and preprocess further if needed
 
 if __name__ == "__main__":
-    main()
+    download_mri_data()

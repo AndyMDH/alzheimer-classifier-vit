@@ -1,9 +1,9 @@
-from src.models.train import train
-from src.utils.config import load_config
-
-def main():
-    config = load_config()
-    train(config)
+from src.data.download_data import download_mri_data
+from src.models.train import train_model
 
 if __name__ == "__main__":
-    main()
+    # Download data
+    download_mri_data()
+
+    # Train model
+    train_model()

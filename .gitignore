@@ -1,0 +1,24 @@
+# Ignore Python bytecode files
+__pycache__/
+*.py[cod]
+
+# Ignore virtual environments
+env/
+venv/
+*.venv/
+
+# Ignore data and checkpoints
+data/raw/*
+data/processed/*
+logs/
+checkpoints/
+model_weights/
+
+# Ignore TensorBoard logs
+runs/
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore VSCode-specific settings (optional)
+.vscode/

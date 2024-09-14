@@ -1,10 +1,17 @@
-# Alzheimer's Detection using Vision Transformers
+# Alzheimer's Disease Detection using 3D Vision Transformer (ViT)
 
-This project aims to detect Alzheimer's disease using Vision Transformers (ViT) on 3D brain MRI images.
+This project uses a 3D Vision Transformer (ViT) to classify MRI scans for Alzheimer's disease detection.
 
-## Installation
+## Project Structure
 
-1. Clone the repository:
-`git clone https://github.com/your_username/your_project.git`
-2. Install the required dependencies:
-`pip install -r requirements.txt`
+```plaintext
+alzheimer_vit/
+├── data/                  # Data folder (train and test splits)
+├── experiments/           # Logs and experiment results
+├── notebooks/             # Jupyter notebooks for EDA and experimentation
+├── src/                   # Source code for the project
+│   ├── data/              # Data loading and preprocessing
+│   ├── models/            # Model training, evaluation, and architectures
+│   └── utils/             # Utility functions (logging, configs)
+└── tests/                 # Unit tests
+

@@ -1,19 +1,26 @@
 import unittest
-from utils.data_module import AlzheimerDataModule
+import numpy as np
+from src.data.preprocess import preprocess_3d_image
+
 
 class TestDataset(unittest.TestCase):
+
     def setUp(self):
-        self.data_module = AlzheimerDataModule("./data", batch_size=32)
-        self.data_module.setup()
+        # Create a dummy 3D image (e.g., 64x64x64 with random values)
+        self.image = np.random.rand(64, 64, 64)
 
-    def test_dataset_length(self):
-        self.assertGreater(len(self.data_module.train_ds), 0)
-        self.assertGreater(len(self.data_module.val_ds), 0)
+    def test_preprocessing(self):
+        # Test the preprocessing function
+        processed_image = preprocess_3d_image(self.image)
 
-    def test_batch_shape(self):
-        batch = next(iter(self.data_module.train_dataloader()))
-        self.assertEqual(batch["image"].shape[0], 32)
-        self.assertEqual(batch["image"].shape[1:], (1, 128, 128, 128))
+        # Assert the processed image has the correct shape
+        self.assertEqual(processed_image.shape, (1, 128, 128, 128))
 
-if __name__ == '__main__':
+        # Additional checks can include data type and value range checks
+        self.assertTrue(isinstance(processed_image, torch.Tensor))
+        self.assertTrue(processed_image.max() <= 1.0)
+        self.assertTrue(processed_image.min() >= 0.0)
+
+
+if __name__ == "__main__":
     unittest.main()

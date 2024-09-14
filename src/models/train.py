@@ -1,18 +1,27 @@
-import pytorch_lightning as pl
-from src.models.architectures.vit3d_b16 import ViT3D_B16
-from utils.data_module import AlzheimerDataModule
-from src.utils.train_utils import get_callbacks, get_logger
+# src/models/train.py
+import torch
+from torch.utils.data import DataLoader
+from vit3d_b16 import vit3d_b16
+from monai.transforms import Compose, LoadImage, RandRotate90, ToTensor
 
+def train_model():
+    model = vit3d_b16()
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    criterion = torch.nn.CrossEntropyLoss()
 
-def train(config):
-    model = ViT3D_B16(num_classes=config.num_classes)
-    data_module = AlzheimerDataModule(config.data_dir, config.batch_size)
+    # Dummy dataset loader (replace with real MRI dataset)
+    train_loader = DataLoader([...], batch_size=4, shuffle=True)
 
-    trainer = pl.Trainer(
-        max_epochs=config.max_epochs,
-        gpus=config.gpus,
-        logger=get_logger(config),
-        callbacks=get_callbacks(config)
-    )
+    model.train()
+    for epoch in range(10):
+        for images, labels in train_loader:
+            optimizer.zero_grad()
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
 
-    trainer.fit(model, data_module)
+        print(f"Epoch [{epoch+1}/10], Loss: {loss.item()}")
+
+if __name__ == "__main__":
+    train_model()
