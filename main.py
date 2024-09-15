@@ -1,9 +1,15 @@
-from src.data.download_data import download_mri_data
+import argparse
 from src.models.train import train_model
 
-if __name__ == "__main__":
-    # Download data
-    download_mri_data()
+def main():
+    # Argument parsing for model selection
+    parser = argparse.ArgumentParser(description='Train 3D ViT models')
+    parser.add_argument('--model', type=str, default='vit_b16', help='Choose a model: vit_b16 or vit_m8')
+    args = parser.parse_args()
 
-    # Train model
-    train_model()
+    # Step 1: Train the model
+    print(f"Starting training for model: {args.model}")
+    train_model(model_name=args.model)  # Pass the chosen model name to the train function
+
+if __name__ == "__main__":
+    main()
