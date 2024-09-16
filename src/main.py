@@ -5,8 +5,12 @@ import torch
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import TensorBoardLogger
 
-from data_loader import create_dataloaders
-from models import ViT3DModel_M8, ViT3DModel_B16, CNN3DModel
+from data.data_loader import create_dataloaders
+
+from models.architectures.vit.vit3d_m8 import ViT3DModel_M8
+from models.architectures.vit.vit3d_b16 import ViT3DModel_B16
+
+from models.architectures.cnn.cnn3d import CNN3DModel
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -14,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     # Load configuration
-    with open('config.yaml', 'r') as f:
+    with open('../config.yaml', 'r') as f:
         config = yaml.safe_load(f)
 
     data_config = config['data']

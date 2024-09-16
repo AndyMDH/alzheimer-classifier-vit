@@ -5,9 +5,9 @@ import torch.nn as nn
 from monai.networks.nets import ViT
 
 
-class ViT3DMini8(pl.LightningModule):
+class ViT3DLarge32(pl.LightningModule):
     def __init__(self, config):
-        super(ViT3DMini8, self).__init__()
+        super(ViT3DLarge32, self).__init__()
         # Extract model configurations from the config dictionary
         model_config = config['model']
         vit_config = model_config['vit_m8']

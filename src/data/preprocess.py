@@ -15,6 +15,7 @@ from monai.transforms import (
 # Configure logging
 logger = logging.getLogger(__name__)
 
+
 def get_preprocessing_transforms() -> Callable:
     """
     Returns the preprocessing transforms to be applied to the data.

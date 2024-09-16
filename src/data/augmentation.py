@@ -13,6 +13,7 @@ from monai.transforms import (
 # Configure logging
 logger = logging.getLogger(__name__)
 
+
 def get_augmentation_transforms() -> Callable:
     """
     Returns the augmentation transforms to be applied to the training data.

@@ -11,6 +11,7 @@ from augmentation import get_augmentation_transforms
 # Configure logging
 logger = logging.getLogger(__name__)
 
+
 def get_train_transforms():
     """
     Combines preprocessing and augmentation transforms for training data.
@@ -25,6 +26,7 @@ def get_train_transforms():
     ])
     return transforms
 
+
 def get_val_transforms():
     """
     Returns preprocessing transforms for validation data.
@@ -36,12 +38,13 @@ def get_val_transforms():
     transforms = get_preprocessing_transforms()
     return transforms
 
+
 def create_dataloaders(
-    data_dir: str,
-    json_path: str,
-    train_batch_size: int = 2,
-    val_batch_size: int = 1,
-    num_workers: int = 4,
+        data_dir: str,
+        json_path: str,
+        train_batch_size: int = 2,
+        val_batch_size: int = 1,
+        num_workers: int = 4,
 ) -> Dict[str, DataLoader]:
     """
     Creates data loaders for training and validation datasets.
