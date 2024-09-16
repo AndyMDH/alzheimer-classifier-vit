@@ -1,21 +1,41 @@
-import monai.transforms as T
-from monai.transforms import Compose, Resize, NormalizeIntensity, RandFlip, RandRotate90, ToTensor
+import logging
+from typing import Callable
 
+from monai.transforms import (
+    Compose,
+    LoadImaged,
+    EnsureChannelFirstd,
+    Orientationd,
+    Spacingd,
+    ScaleIntensityd,
+    ResizeWithPadOrCropd,
+    ToTensord,
+)
 
-def get_preprocessing_transforms(target_size=(128, 128, 128)):
+# Configure logging
+logger = logging.getLogger(__name__)
+
+def get_preprocessing_transforms() -> Callable:
     """
-    Define preprocessing transforms for 3D data.
-
-    Args:
-        target_size (tuple): Target size to resize the 3D images.
+    Returns the preprocessing transforms to be applied to the data.
 
     Returns:
-        A composed list of transforms.
+        Callable: A composed transform function.
     """
-    return Compose([
-        Resize(spatial_size=target_size),
-        NormalizeIntensity(nonzero=True),  # Normalize intensity for non-zero pixels
-        RandFlip(prob=0.5, spatial_axis=(0, 1, 2)),  # Random flip along each axis
-        RandRotate90(prob=0.5, spatial_axes=(0, 1)),  # Randomly rotate 90 degrees
-        ToTensor()  # Convert to PyTorch tensor
+    logger.info("Creating preprocessing transforms.")
+    transforms = Compose([
+        LoadImaged(keys=['image', 'label']),
+        EnsureChannelFirstd(keys=['image', 'label']),  # Handles images with or without a channel dimension
+        Orientationd(keys=['image', 'label'], axcodes='RAS'),  # Ensure consistent orientation
+        Spacingd(
+            keys=['image', 'label'],
+            pixdim=(1.0, 1.0, 1.0),
+            mode=('bilinear', 'nearest'),  # 'nearest' for labels to avoid interpolation artifacts
+        ),
+        ScaleIntensityd(keys=['image']),  # Normalize intensity to [0, 1]
+        ResizeWithPadOrCropd(keys=['image', 'label'], spatial_size=(128, 128, 128)),
+        # Uncomment the following line if you want to standardize intensity
+        # NormalizeIntensityd(keys=['image']),  # Standardize intensity (zero mean, unit variance)
+        ToTensord(keys=['image', 'label']),
     ])
+    return transforms

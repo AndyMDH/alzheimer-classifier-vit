@@ -1,73 +1,57 @@
+# src/models/train.py
 import torch
-import pytorch_lightning as pl
 from torch.utils.data import DataLoader
-from timm.models.vision_transformer import VisionTransformer
 from src.models.architectures.vit3d_b16 import ViT3DB16
 from src.data.preprocess import get_preprocessing_transforms
-from pytorch_lightning.callbacks import ModelCheckpoint
+from src.utils.logger import get_tensorboard_logger
+from src.utils.train_utils import save_checkpoint
 
-class ViT3DLightning(pl.LightningModule):
-    def __init__(self, model_name='vit_b16', learning_rate=1e-4, num_classes=2, use_pretrained=True):
-        super(ViT3DLightning, self).__init__()
-        self.save_hyperparameters()
 
-        # Initialize the 3D Vision Transformer (ViT3DB16) for your data
-        if model_name == 'vit_b16':
-            self.model = ViT3DB16(num_classes=num_classes)
-        else:
-            raise ValueError(f"Unknown model name: {model_name}")
+def train_model(model_name='vit_b16', epochs=10, batch_size=4, learning_rate=1e-4):
+    # Initialize model
+    if model_name == 'vit_b16':
+        model = ViT3DB16()
+    elif model_name == 'vit_m8':
+        from src.models.architectures.vit3d_m8 import ViT3DM8
+        model = ViT3DM8()
+    elif model_name == 'vit_l32':
+        from src.models.architectures.vit3d_m8 import ViT3L32
+        model = ViT3DL32()
+    else:
+        raise ValueError(f"Unknown model name: {model_name}")
 
-        if use_pretrained:
-            # Step 1: Load the pre-trained Vision Transformer from the `timm` library
-            vit_pretrained = VisionTransformer.from_pretrained('vit_base_patch16_224')
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    criterion = torch.nn.CrossEntropyLoss()
 
-            # Step 2: Load the pre-trained transformer weights into the 3D transformer
-            # We skip the patch embedding and positional embeddings
-            self.model.transformer.load_state_dict(vit_pretrained.state_dict(), strict=False)
+    # DataLoader (replace [...] with your dataset)
+    transforms = get_preprocessing_transforms()
+    train_dataset = [...]  # Load your dataset here and apply transforms
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-            print("Loaded pre-trained weights for the transformer!")
+    # TensorBoard logger
+    writer = get_tensorboard_logger()
 
-        self.criterion = torch.nn.CrossEntropyLoss()
-        self.learning_rate = learning_rate
+    best_loss = float('inf')  # Track best loss for checkpointing
 
-    def forward(self, x):
-        return self.model(x)
+    for epoch in range(epochs):
+        model.train()
+        epoch_loss = 0.0
+        for i, (images, labels) in enumerate(train_loader):
+            optimizer.zero_grad()
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
 
-    def training_step(self, batch, batch_idx):
-        images, labels = batch
-        outputs = self(images)
-        loss = self.criterion(outputs, labels)
-        self.log('train_loss', loss)
-        return loss
+            epoch_loss += loss.item()
+            writer.add_scalar('Loss/train', loss.item(), epoch * len(train_loader) + i)
 
-    def validation_step(self, batch, batch_idx):
-        images, labels = batch
-        outputs = self(images)
-        val_loss = self.criterion(outputs, labels)
-        self.log('val_loss', val_loss)
-        return val_loss
+        avg_loss = epoch_loss / len(train_loader)
+        print(f"Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.4f}")
 
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
-        return optimizer
+        # Save checkpoint
+        save_checkpoint({'epoch': epoch + 1, 'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()},
+                        is_best=(avg_loss < best_loss))
+        best_loss = min(avg_loss, best_loss)
 
-# DataLoader (replace [...] with your actual dataset)
-train_transforms = get_preprocessing_transforms()
-train_dataset = [...]  # Your dataset with preprocessing applied
-train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
-
-# Validation loader (replace [...] with actual validation dataset)
-val_dataset = [...]
-val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False)
-
-# Initialize the Lightning model
-model = ViT3DLightning(model_name='vit_b16', learning_rate=1e-4, num_classes=2, use_pretrained=True)
-
-# Add checkpointing callback
-checkpoint_callback = ModelCheckpoint(monitor='val_loss', mode='min')
-
-# Initialize the PyTorch Lightning trainer
-trainer = pl.Trainer(max_epochs=10, callbacks=[checkpoint_callback], gpus=1)  # Set gpus=1 if using GPU
-
-# Train the model
-trainer.fit(model, train_loader, val_loader)
+    writer.close()
