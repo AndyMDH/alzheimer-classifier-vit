@@ -22,9 +22,9 @@ def get_augmentation_transforms() -> Callable:
     """
     logger.info("Creating augmentation transforms.")
     transforms = Compose([
-        RandFlipd(keys=['image', 'label'], prob=0.5, spatial_axis=0),
+        RandFlipd(keys=['image', 'label'], prob=0.5, spatial_axis=[0, 1, 2]),
         RandRotate90d(keys=['image', 'label'], prob=0.5, max_k=3),
-        RandZoomd(keys=['image', 'label'], min_zoom=0.9, max_zoom=1.1, prob=0.5),
+        RandZoomd(keys=['image', 'label'], prob=0.5, min_zoom=0.9, max_zoom=1.1),
         Rand3DElasticd(
             keys=['image', 'label'],
             prob=0.5,

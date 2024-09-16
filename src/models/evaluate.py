@@ -1,14 +1,14 @@
 # src/models/evaluate.py
 import torch
 from torch.utils.data import DataLoader
-from src.models.architectures.vit3d_b16 import ViT3DB16
+from src.models.architectures.vit.vit3d_b16 import ViT3DB16
 from src.data.preprocess import get_preprocessing_transforms
 
 def evaluate_model(model_name='vit_b16'):
     if model_name == 'vit_b16':
         model = ViT3DB16()
     elif model_name == 'vit_m8':
-        from src.models.architectures.vit3d_m8 import ViT3DM8
+        from src.models.architectures.vit.vit3d_m8 import ViT3DM8
         model = ViT3DM8()
     else:
         raise ValueError(f"Unknown model name: {model_name}")

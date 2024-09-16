@@ -1,5 +1,5 @@
 import logging
-from typing import Callable, Dict
+from typing import Dict
 
 from monai.transforms import Compose
 from monai.data import DataLoader, CacheDataset, load_decathlon_datalist
@@ -11,7 +11,7 @@ from augmentation import get_augmentation_transforms
 # Configure logging
 logger = logging.getLogger(__name__)
 
-def get_train_transforms() -> Callable:
+def get_train_transforms():
     """
     Combines preprocessing and augmentation transforms for training data.
 
@@ -25,7 +25,7 @@ def get_train_transforms() -> Callable:
     ])
     return transforms
 
-def get_val_transforms() -> Callable:
+def get_val_transforms():
     """
     Returns preprocessing transforms for validation data.
 
@@ -107,37 +107,3 @@ def create_dataloaders(
     )
 
     return {'train': train_loader, 'val': val_loader}
-
-if __name__ == "__main__":
-    # Minimal testing code
-    import logging
-    import sys
-
-    # Configure logging to console
-    logging.basicConfig(level=logging.INFO)
-
-    # Paths to your data directory and JSON file
-    data_dir = '/path/to/data_directory'
-    json_path = '/path/to/dataset.json'
-
-    try:
-        # Create data loaders
-        dataloaders = create_dataloaders(
-            data_dir=data_dir,
-            json_path=json_path,
-            train_batch_size=2,
-            val_batch_size=1,
-            num_workers=4,
-        )
-
-        # Iterate over the training data loader and print batch shapes
-        for batch in dataloaders['train']:
-            images = batch['image']
-            labels = batch['label']
-            logger.info(f"Batch image shape: {images.shape}")
-            logger.info(f"Batch label shape: {labels.shape}")
-            break  # Remove this break statement to iterate over the entire dataset
-
-    except Exception as e:
-        logger.error(f"An error occurred: {e}")
-        sys.exit(1)

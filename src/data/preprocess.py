@@ -25,17 +25,15 @@ def get_preprocessing_transforms() -> Callable:
     logger.info("Creating preprocessing transforms.")
     transforms = Compose([
         LoadImaged(keys=['image', 'label']),
-        EnsureChannelFirstd(keys=['image', 'label']),  # Handles images with or without a channel dimension
-        Orientationd(keys=['image', 'label'], axcodes='RAS'),  # Ensure consistent orientation
+        EnsureChannelFirstd(keys=['image', 'label']),  # Ensures channel-first format
+        Orientationd(keys=['image', 'label'], axcodes='RAS'),  # Standardizes orientation
         Spacingd(
             keys=['image', 'label'],
             pixdim=(1.0, 1.0, 1.0),
-            mode=('bilinear', 'nearest'),  # 'nearest' for labels to avoid interpolation artifacts
+            mode=('bilinear', 'nearest'),  # 'bilinear' for images, 'nearest' for labels
         ),
-        ScaleIntensityd(keys=['image']),  # Normalize intensity to [0, 1]
+        ScaleIntensityd(keys=['image']),  # Normalizes image intensities to [0, 1]
         ResizeWithPadOrCropd(keys=['image', 'label'], spatial_size=(128, 128, 128)),
-        # Uncomment the following line if you want to standardize intensity
-        # NormalizeIntensityd(keys=['image']),  # Standardize intensity (zero mean, unit variance)
         ToTensord(keys=['image', 'label']),
     ])
     return transforms

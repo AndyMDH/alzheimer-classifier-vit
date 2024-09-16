@@ -1,7 +1,7 @@
 # src/models/train.py
 import torch
 from torch.utils.data import DataLoader
-from src.models.architectures.vit3d_b16 import ViT3DB16
+from src.models.architectures.vit.vit3d_b16 import ViT3DB16
 from src.data.preprocess import get_preprocessing_transforms
 from src.utils.logger import get_tensorboard_logger
 from src.utils.train_utils import save_checkpoint
@@ -12,10 +12,9 @@ def train_model(model_name='vit_b16', epochs=10, batch_size=4, learning_rate=1e-
     if model_name == 'vit_b16':
         model = ViT3DB16()
     elif model_name == 'vit_m8':
-        from src.models.architectures.vit3d_m8 import ViT3DM8
+        from src.models.architectures.vit.vit3d_m8 import ViT3DM8
         model = ViT3DM8()
     elif model_name == 'vit_l32':
-        from src.models.architectures.vit3d_m8 import ViT3L32
         model = ViT3DL32()
     else:
         raise ValueError(f"Unknown model name: {model_name}")
