@@ -2,8 +2,7 @@ import torch
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 from pytorch_lightning.callbacks import ModelCheckpoint
-from timm.models.vision_transformer import VisionTransformer  # For transfer learning
-
+from timm.models.vision_transformer import VisionTransformer
 # Import both models
 from src.models.architectures.vit3d_b16 import ViT3DB16
 from src.models.architectures.vit3d_m8 import ViT3DM8
