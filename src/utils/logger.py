@@ -1,16 +1,13 @@
-# src/utils/logger.py
-from torch.utils.tensorboard import SummaryWriter
+import logging
 
+def setup_logger(name, log_file, level=logging.INFO):
+    """Set up logger."""
+    formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+    handler = logging.FileHandler(log_file)        
+    handler.setFormatter(formatter)
 
-def get_tensorboard_logger(log_dir="logs"):
-    """
-    Initializes a TensorBoard SummaryWriter to log metrics and losses.
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    logger.addHandler(handler)
 
-    Args:
-        log_dir (str): Directory where logs will be saved.
-
-    Returns:
-        SummaryWriter object
-    """
-    writer = SummaryWriter(log_dir)
-    return writer
+    return logger

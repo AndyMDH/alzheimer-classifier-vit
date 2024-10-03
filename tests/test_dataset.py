@@ -1,26 +1,31 @@
 import unittest
-import numpy as np
-from src.data.preprocess import preprocess_3d_image
-
+from src.data.data_loader import load_huggingface_dataset, create_monai_dataset, get_transforms
 
 class TestDataset(unittest.TestCase):
-
     def setUp(self):
-        # Create a dummy 3D image (e.g., 64x64x64 with random values)
-        self.image = np.random.rand(64, 64, 64)
+        self.dataset_name = 'your_dataset_name'
+        self.model_type = '3d_vit'
 
-    def test_preprocessing(self):
-        # Test the preprocessing function
-        processed_image = preprocess_3d_image(self.image)
+    def test_load_huggingface_dataset(self):
+        dataset = load_huggingface_dataset(self.dataset_name)
+        self.assertIsNotNone(dataset)
+        self.assertTrue('train' in dataset)
+        self.assertTrue('validation' in dataset)
+        self.assertTrue('test' in dataset)
 
-        # Assert the processed image has the correct shape
-        self.assertEqual(processed_image.shape, (1, 128, 128, 128))
+    def test_create_monai_dataset(self):
+        hf_dataset = load_huggingface_dataset(self.dataset_name)
+        transforms = get_transforms(self.model_type)
+        monai_dataset = create_monai_dataset(hf_dataset['train'], transforms)
+        self.assertIsNotNone(monai_dataset)
+        self.assertTrue(len(monai_dataset) > 0)
 
-        # Additional checks can include data type and value range checks
-        self.assertTrue(isinstance(processed_image, torch.Tensor))
-        self.assertTrue(processed_image.max() <= 1.0)
-        self.assertTrue(processed_image.min() >= 0.0)
+    def test_get_transforms(self):
+        transforms_2d = get_transforms('2d_vit')
+        transforms_3d = get_transforms('3d_vit')
+        self.assertIsNotNone(transforms_2d)
+        self.assertIsNotNone(transforms_3d)
+        self.assertNotEqual(transforms_2d, transforms_3d)
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

@@ -1,24 +1,22 @@
-# Ignore Python bytecode files
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+*$py.class
 
-# Ignore virtual environments
-env/
-venv/
-*.venv/
+# C extensions
+*.so
 
-# Ignore data and checkpoints
-data/raw/*
-data/processed/*
-logs/
-checkpoints/
-model_weights/
-
-# Ignore TensorBoard logs
-runs/
-
-# Ignore Jupyter Notebook checkpoints
-.ipynb_checkpoints/
-
-# Ignore VSCode-specific settings (optional)
-.vscode/
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/

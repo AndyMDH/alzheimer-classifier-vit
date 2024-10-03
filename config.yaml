@@ -1,33 +1,16 @@
-train:
-  batch_size: 2
-  val_batch_size: 1
-  num_epochs: 10
-  learning_rate: 0.0001
-  num_workers: 4
-  model_type: 'vit_m8'  # Options: 'vit_m8', 'vit_b16', 'cnn'
-  experiment_name: 'experiment_vit_m8'
-
-data:
-  data_dir: '/path/to/data_directory'
-  json_path: '/path/to/dataset.json'
+dataset:
+  name: 'your_dataset_name'
+  batch_size: 32
 
 model:
-  num_classes: 2
-  in_channels: 1
-  img_size: [128, 128, 128]
-  vit_m8:
-    patch_size: [16, 16, 16]
-    hidden_size: 512
-    mlp_dim: 2048
-    num_layers: 8
-    num_heads: 8
-    dropout_rate: 0.1
-    # pretrained_weights: 'path/to/pretrained_weights_m8.pth'  # Optional
-  vit_b16:
-    patch_size: [16, 16, 16]
-    hidden_size: 768
-    mlp_dim: 3072
-    num_layers: 12
-    num_heads: 12
-    dropout_rate: 0.1
-    # pretrained_weights: 'path/to/pretrained_weights_b16.pth'  # Optional
+  type: '3d_vit'  # Options: '2d_vit', '3d_vit', '3d_cnn'
+  num_labels: 4
+
+training:
+  max_epochs: 50
+  learning_rate: 1e-4
+
+paths:
+  log_dir: './logs'
+  checkpoint_dir: './checkpoints'
+  output_dir: './output'

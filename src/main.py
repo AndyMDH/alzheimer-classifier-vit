@@ -1,64 +1,47 @@
-# main.py
-import logging
-import yaml
 import torch
-import pytorch_lightning as pl
-from pytorch_lightning.loggers import TensorBoardLogger
+from monai.utils import set_determinism
+from src.data.data_loader import prepare_data
+from src.models.architectures.vit2d import create_vit_2d
+from src.models.architectures.vit3d import create_vit_3d
+from src.models.architectures.cnn3d import create_cnn_3d
+from src.models.train import train_model
+from src.models.evaluate import evaluate_model
+from src.utils.logger import setup_logger
 
-from data.data_loader import create_dataloaders
+def main():
+    # Set deterministic training for reproducibility
+    set_determinism(seed=0)
 
-from models.architectures.vit.vit3d_m8 import ViT3DModel_M8
-from models.architectures.vit.vit3d_b16 import ViT3DModel_B16
+    # Set up logger
+    logger = setup_logger('alzheimer_detection', 'logs/alzheimer_detection.log')
 
-from models.architectures.cnn.cnn3d import CNN3DModel
+    # Set parameters
+    dataset_name = 'your_dataset_name'
+    model_type = '3d_vit'  # Options: '2d_vit', '3d_vit', '3d_cnn'
+    batch_size = 32
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+    # Prepare data
+    train_loader, val_loader, test_loader = prepare_data(dataset_name, model_type, batch_size)
+
+    # Create model
+    num_labels = 4  # Assuming 4 classes for Alzheimer's stages
+    if model_type == '2d_vit':
+        model = create_vit_2d(num_labels)
+    elif model_type == '3d_vit':
+        model = create_vit_3d(num_labels)
+    elif model_type == '3d_cnn':
+        model = create_cnn_3d(num_labels)
+
+    # Set device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+
+    # Train model
+    train_model(model, train_loader, val_loader, max_epochs=50, lr=1e-4, device=device)
+
+    # Evaluate model
+    results = evaluate_model(model, test_loader, device)
+    logger.info(f"Evaluation results: {results}")
 
 if __name__ == "__main__":
-    # Load configuration
-    with open('../config.yaml', 'r') as f:
-        config = yaml.safe_load(f)
-
-    data_config = config['data']
-    train_config = config['train']
-    model_config = config['model']
-
-    # Device configuration
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    logger.info(f"Using device: {device}")
-
-    # Create data loaders
-    dataloaders = create_dataloaders(
-        data_dir=data_config['data_dir'],
-        json_path=data_config['json_path'],
-        train_batch_size=train_config['batch_size'],
-        val_batch_size=train_config['val_batch_size'],
-        num_workers=train_config['num_workers'],
-    )
-
-    # Choose the model to train
-    model_type = train_config['model_type']
-
-    if model_type == 'vit_m8':
-        model = ViT3DModel_M8(config)
-    elif model_type == 'vit_b16':
-        model = ViT3DModel_B16(config)
-    elif model_type == 'cnn':
-        model = CNN3DModel(config)
-    else:
-        raise ValueError("Invalid model choice")
-
-    # Initialize the TensorBoard logger
-    logger_tb = TensorBoardLogger("lightning_logs", name=train_config['experiment_name'])
-
-    # Initialize the Trainer
-    trainer = pl.Trainer(
-        max_epochs=train_config['num_epochs'],
-        logger=logger_tb,
-        gpus=1 if torch.cuda.is_available() else 0,
-    )
-
-    # Train the model
-    trainer.fit(model, dataloaders['train'], dataloaders['val'])
+    main()

@@ -1,61 +1,144 @@
-# Alzheimer's Disease Detection using 3D Vision Transformer (ViT)
+# Alzheimer's Detection using Vision Transformers
 
-This project implements a 3D Vision Transformer (ViT) model to classify MRI scans for detecting Alzheimer's disease. 
-The ViT architecture is leveraged to capture spatial patterns in 3D medical imaging, making it suitable for MRI-based classification tasks.
+This project implements an Alzheimer's disease detection system using Vision Transformers (ViT) and 3D Convolutional Neural Networks. It leverages transfer learning techniques to adapt pre-trained models for MRI scan analysis.
 
 ## Table of Contents
+- [Project Overview](#project-overview)
+- [Installation](#installation)
+- [Project Structure](#project-structure)
+- [Usage](#usage)
+- [Models](#models)
+- [Data](#data)
+- [Training](#training)
+- [Evaluation](#evaluation)
+- [Testing](#testing)
+- [Contributing](#contributing)
+- [License](#license)
 
-- Overview
-- Project Structure
-- Installation
-- Usage
-- Model Architecture
-- Experiments and Results
-- Contributing
-- License
+## Project Overview
 
-## Overview
+This project aims to detect Alzheimer's disease using MRI scans. It implements and compares three different deep learning architectures:
+1. 2D Vision Transformer (ViT)
+2. 3D Vision Transformer
+3. 3D Convolutional Neural Network (CNN)
 
-Alzheimer's disease affects millions globally, and early detection through imaging techniques such as MRI is crucial for 
-effective treatment. This project applies state-of-the-art deep learning techniques using a Vision Transformer adapted for 3D medical imaging.
+The project utilizes transfer learning techniques, starting with pre-trained models and adapting them for the specific task of Alzheimer's detection.
 
-Key features:
+## Installation
 
-- Utilizes 3D patches from MRI scans to classify Alzheimer's disease stages.
-- Designed for both binary classification (Alzheimer's vs. Healthy) and multi-class classification (MCI, AD, Healthy).
-- Integrated experiment logging and evaluation tools to track model performance.
+1. Clone the repository:
+   ```
+   git clone https://github.com/yourusername/alzheimers-detection-vit.git
+   cd alzheimers-detection-vit
+   ```
+
+2. Create a virtual environment (optional but recommended):
+   ```
+   python -m venv venv
+   source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
+   ```
+
+3. Install the required packages:
+   ```
+   pip install -r requirements.txt
+   ```
 
 ## Project Structure
 
-```plaintext
+```
 alzheimer_vit/
-├── experiments/           # Logs, checkpoints, and experiment results
-├── notebooks/             # Jupyter notebooks for EDA and experimentation
-├── src/                   # Source code for the project
-│   ├── data/              # Data loading, augmentation, and preprocessing scripts
-│   │   ├── augmentation.py
-│   │   ├── data_loader.py
-│   │   └── preprocess.py
-│   ├── models/            # Model definitions, training, and evaluation scripts
-│   │   ├── architectures/ # Model architectures
-│   │   │   ├── cnn/
-│   │   │   │   └── cnn3d.py
-│   │   │   └── vit/
-│   │   │       ├── vit3d_b16.py
-│   │   │       ├── vit3d_l32.py
-│   │   │       └── vit3d_m8.py
+├── data/
+│   ├── test/
+│   └── train/
+├── experiments/
+├── notebooks/
+├── src/
+│   ├── data/
+│   │   └── data_loader.py
+│   ├── models/
+│   │   ├── architectures/
+│   │   │   ├── vit2d.py
+│   │   │   ├── vit3d.py
+│   │   │   └── cnn3d.py
 │   │   ├── evaluate.py
 │   │   └── train.py
-│   ├── utils/             # Utility functions
-│   │   ├── logger.py
-│   │   ├── train_utils.py
-│   │   └── main.py        # Main script to run the model
-├── tests/                 # Unit tests for various project components
+│   └── utils/
+│       └── logger.py
+├── tests/
 │   ├── test_dataset.py
 │   ├── test_models.py
 │   └── test_train.py
-├── config.yaml            # Configuration file for experiments
-├── requirements.txt       # Python dependencies
-└── README.md              # Project README
+├── .env
+├── .gitignore
+├── config.yaml
+├── main.py
+├── README.md
+└── requirements.txt
+```
 
+## Usage
 
+To run the main script:
+
+```
+python main.py
+```
+
+This will load the dataset, prepare the data, create the specified model, train it, and evaluate its performance.
+
+## Models
+
+The project implements three types of models:
+
+1. 2D Vision Transformer (`src/models/architectures/vit2d.py`)
+2. 3D Vision Transformer (`src/models/architectures/vit3d.py`)
+3. 3D CNN (`src/models/architectures/cnn3d.py`)
+
+You can specify which model to use in the `config.yaml` file.
+
+## Data
+
+The project uses the Alzheimer's Disease Neuroimaging Initiative (ADNI) dataset. Data is loaded from Hugging Face datasets and preprocessed using MONAI transforms.
+
+To use your own dataset, modify the `load_huggingface_dataset` function in `src/data/data_loader.py`.
+
+## Training
+
+Training is managed by the `train_model` function in `src/models/train.py`. It uses MONAI's `SupervisedTrainer` for efficient training of medical imaging models.
+
+To start training, run:
+
+```
+python main.py
+```
+
+Training parameters can be adjusted in the `config.yaml` file.
+
+## Evaluation
+
+Model evaluation is performed using the `evaluate_model` function in `src/models/evaluate.py`. It uses MONAI's `SupervisedEvaluator` and calculates the ROC AUC metric.
+
+## Testing
+
+To run the tests:
+
+```
+python -m unittest discover tests
+```
+
+This will run all test files in the `tests/` directory.
+
+## Contributing
+
+Contributions to this project are welcome. Please follow these steps:
+
+1. Fork the repository
+2. Create a new branch (`git checkout -b feature/AmazingFeature`)
+3. Make your changes
+4. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+5. Push to the branch (`git push origin feature/AmazingFeature`)
+6. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
