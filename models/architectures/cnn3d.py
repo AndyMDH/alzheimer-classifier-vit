@@ -1,12 +1,15 @@
+"""
+3D CNN model for Alzheimer's detection.
+"""
+
 import torch.nn as nn
 import torchvision.models as models
 
 
 class CNN3D(nn.Module):
-    def __init__(self, num_labels, pretrained=True):
+    def __init__(self, num_labels: int, freeze_layers: bool = True):
         super().__init__()
-        # Start with a 2D ResNet and modify for 3D
-        resnet = models.resnet50(pretrained=pretrained)
+        resnet = models.resnet50(pretrained=True)
 
         # Modify the first convolutional layer for 3D input
         self.conv1 = nn.Conv3d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
@@ -21,6 +24,13 @@ class CNN3D(nn.Module):
         self.layer4 = self._make_layer_3d(resnet.layer4)
         self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
         self.fc = nn.Linear(2048, num_labels)
+
+        if freeze_layers:
+            for param in self.parameters():
+                param.requires_grad = False
+            # Unfreeze the final fully connected layer
+            for param in self.fc.parameters():
+                param.requires_grad = True
 
     def _make_layer_3d(self, layer):
         new_layer = nn.Sequential()
@@ -60,6 +70,6 @@ class CNN3D(nn.Module):
         return x
 
 
-def create_cnn_3d(num_labels):
-    """Create a 3D CNN model."""
-    return CNN3D(num_labels)
+def create_cnn_3d(num_labels: int, freeze_layers: bool = True) -> nn.Module:
+    """Create a 3D CNN model with transfer learning."""
+    return CNN3D(num_labels, freeze_layers)

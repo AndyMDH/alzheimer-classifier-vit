@@ -1,14 +1,17 @@
-model:
-  type: '3d_vit'  # Default model type
-  num_labels: 4
-
 dataset:
-  name: 'your_dataset_name'
+  name: 'your_dataset_name'  # Replace with actual dataset name
   batch_size: 32
+
+model:
+  type: '3d_vit'  # Options: '2d_vit', '3d_vit', '3d_cnn'
+  num_labels: 4
+  freeze_layers: true
 
 training:
   max_epochs: 50
   learning_rate: 1e-4
+  device: 'cuda'
+  tensorboard_log_dir: './runs'
 
 paths:
   log_dir: './logs'

@@ -1,34 +1,34 @@
+"""
+Data loading and preprocessing module for Alzheimer's detection project.
+"""
+
+from pathlib import Path
+from typing import Tuple
 from datasets import load_dataset
 from monai.data import Dataset, DataLoader
 from monai.transforms import (
-    Compose,
-    LoadImaged,
-    EnsureChannelFirstd,
-    ScaleIntensityd,
-    Resized,
-    RandRotate90d,
-    RandFlipd
+    Compose, LoadImaged, EnsureChannelFirstd, ScaleIntensityd,
+    Resized, RandRotate90d, RandFlipd
 )
-import torch
 
 
-def load_huggingface_dataset(dataset_name, split='train'):
+def load_huggingface_dataset(dataset_name: str, split: str = 'train') -> Dataset:
     """Load dataset from Hugging Face."""
     return load_dataset(dataset_name, split=split)
 
 
-def create_monai_dataset(hf_dataset, transforms):
+def create_monai_dataset(hf_dataset: Dataset, transforms: Compose) -> Dataset:
     """Create a MONAI dataset from a Hugging Face dataset."""
     data = [{"image": item["image"], "label": item["label"]} for item in hf_dataset]
     return Dataset(data=data, transform=transforms)
 
 
-def create_data_loaders(dataset, batch_size, num_workers=4):
+def create_data_loaders(dataset: Dataset, batch_size: int, num_workers: int = 4) -> DataLoader:
     """Create DataLoader with given dataset and batch size."""
     return DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
 
-def get_transforms(model_type, spatial_size=(224, 224, 224)):
+def get_transforms(model_type: str, spatial_size: Tuple[int, int, int] = (224, 224, 224)) -> Compose:
     """Get MONAI transforms based on model type."""
     if model_type == '2d_vit':
         return Compose([
@@ -50,20 +50,15 @@ def get_transforms(model_type, spatial_size=(224, 224, 224)):
         ])
 
 
-def prepare_data(dataset_name, model_type, batch_size):
+def prepare_data(dataset_name: str, model_type: str, batch_size: int) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """Prepare datasets and dataloaders."""
-    # Load dataset from Hugging Face
     hf_dataset = load_huggingface_dataset(dataset_name)
-
-    # Get MONAI transforms
     transforms = get_transforms(model_type)
 
-    # Create MONAI datasets
     train_ds = create_monai_dataset(hf_dataset['train'], transforms)
     val_ds = create_monai_dataset(hf_dataset['validation'], transforms)
     test_ds = create_monai_dataset(hf_dataset['test'], transforms)
 
-    # Create data loaders
     train_loader = create_data_loaders(train_ds, batch_size)
     val_loader = create_data_loaders(val_ds, batch_size)
     test_loader = create_data_loaders(test_ds, batch_size)
