@@ -1,8 +1,8 @@
 import unittest
 import torch
-from src.models.architectures.vit2d import create_vit_2d
-from src.models.architectures.vit3d import create_vit_3d
-from src.models.architectures.cnn3d import create_cnn_3d
+from models.architectures.vit2d import create_vit_2d
+from models.architectures.vit3d import create_vit_3d
+from models.architectures.cnn3d import create_cnn_3d
 
 class TestModels(unittest.TestCase):
     def setUp(self):

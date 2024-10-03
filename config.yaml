@@ -1,10 +1,10 @@
+model:
+  type: '3d_vit'  # Default model type
+  num_labels: 4
+
 dataset:
   name: 'your_dataset_name'
   batch_size: 32
-
-model:
-  type: '3d_vit'  # Options: '2d_vit', '3d_vit', '3d_cnn'
-  num_labels: 4
 
 training:
   max_epochs: 50

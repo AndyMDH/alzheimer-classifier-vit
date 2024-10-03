@@ -1,5 +1,5 @@
 import unittest
-from src.data.data_loader import load_huggingface_dataset, create_monai_dataset, get_transforms
+from data.data_loader import load_huggingface_dataset, create_monai_dataset, get_transforms
 
 class TestDataset(unittest.TestCase):
     def setUp(self):

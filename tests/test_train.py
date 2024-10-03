@@ -1,7 +1,7 @@
 import unittest
 import torch
-from src.models.architectures.vit3d import create_vit_3d
-from src.models.train import train_model
+from models.architectures.vit3d import create_vit_3d
+from models.train import train_model
 from monai.data import DataLoader, Dataset
 
 
