@@ -5,13 +5,13 @@ Main script for Alzheimer's detection using transfer learning on vision transfor
 import argparse
 import yaml
 from pathlib import Path
+from models.architectures import create_model
 from data.data_loader import prepare_data
 from models.train import train_model
 from models.evaluate import evaluate_model
 from utils.logger import setup_logger
 
 def load_config(config_path: str) -> dict:
-    """Load configuration from YAML file."""
     with open(config_path, 'r') as file:
         return yaml.safe_load(file)
 
@@ -29,7 +29,7 @@ def main():
     logger.info(f"Using model type: {model_type}")
 
     train_loader, val_loader, test_loader = prepare_data(
-        config['dataset']['name'],
+        config['dataset']['path'],
         model_type,
         config['dataset']['batch_size']
     )
@@ -38,7 +38,7 @@ def main():
 
     train_model(model, train_loader, val_loader, config['training'])
 
-    results = evaluate_model(model, test_loader)
+    results = evaluate_model(model, test_loader, config['training']['device'])
     logger.info(f"Evaluation results: {results}")
 
 if __name__ == "__main__":

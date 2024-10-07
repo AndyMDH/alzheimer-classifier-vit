@@ -1,11 +1,11 @@
-dataset:
-  name: 'your_dataset_name'  # Replace with actual dataset name
-  batch_size: 32
-
 model:
-  type: '3d_vit'  # Options: '2d_vit', '3d_vit', '3d_cnn'
-  num_labels: 4
+  type: '3d_vit'  # or '2d_vit' or '3d_cnn'
+  num_labels: 3  # Assuming 3 classes: AD, CN, MCI
   freeze_layers: true
+
+dataset:
+  path: '/path/to/your/nifti/dataset'
+  batch_size: 32
 
 training:
   max_epochs: 100
@@ -25,3 +25,4 @@ training:
 paths:
   log_dir: './logs'
   output_dir: './output'
+

@@ -4,60 +4,74 @@ Data loading and preprocessing module for Alzheimer's detection project.
 
 from pathlib import Path
 from typing import Tuple
-from datasets import load_dataset
+import nibabel as nib
+import numpy as np
 from monai.data import Dataset, DataLoader
 from monai.transforms import (
-    Compose, LoadImaged, EnsureChannelFirstd, ScaleIntensityd,
-    Resized, RandRotate90d, RandFlipd
+    Compose, AddChannel, ScaleIntensity, Resize, RandRotate90, RandFlip
 )
 
+class NIfTIDataset(Dataset):
+    def __init__(self, data_dir: str, transform: Compose = None, model_type: str = '3d'):
+        self.data_dir = Path(data_dir)
+        self.file_list = list(self.data_dir.rglob('*.nii.gz'))
+        self.transform = transform
+        self.model_type = model_type
 
-def load_huggingface_dataset(dataset_name: str, split: str = 'train') -> Dataset:
-    """Load dataset from Hugging Face."""
-    return load_dataset(dataset_name, split=split)
+    def __len__(self):
+        return len(self.file_list)
 
+    def __getitem__(self, idx):
+        file_path = self.file_list[idx]
+        label = file_path.parent.name  # Assuming directory name is the label
 
-def create_monai_dataset(hf_dataset: Dataset, transforms: Compose) -> Dataset:
-    """Create a MONAI dataset from a Hugging Face dataset."""
-    data = [{"image": item["image"], "label": item["label"]} for item in hf_dataset]
-    return Dataset(data=data, transform=transforms)
+        nifti = nib.load(str(file_path))
+        image = nifti.get_fdata()
 
+        if self.model_type == '2d':
+            middle_slice_idx = image.shape[2] // 2
+            image = image[:, :, middle_slice_idx]
+            image = np.expand_dims(image, axis=0)
+
+        if self.transform:
+            image = self.transform(image)
+
+        return {"image": image, "label": label}
+
+def create_monai_dataset(data_dir: str, transforms: Compose, model_type: str) -> Dataset:
+    """Create a MONAI dataset from local NIfTI files."""
+    return NIfTIDataset(data_dir, transforms, model_type)
 
 def create_data_loaders(dataset: Dataset, batch_size: int, num_workers: int = 4) -> DataLoader:
     """Create DataLoader with given dataset and batch size."""
     return DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
-
 def get_transforms(model_type: str, spatial_size: Tuple[int, int, int] = (224, 224, 224)) -> Compose:
     """Get MONAI transforms based on model type."""
     if model_type == '2d_vit':
         return Compose([
-            LoadImaged(keys=["image"]),
-            EnsureChannelFirstd(keys=["image"]),
-            Resized(keys=["image"], spatial_size=spatial_size[:2]),
-            ScaleIntensityd(keys=["image"]),
-            RandRotate90d(keys=["image"], prob=0.5, spatial_axes=[0, 1]),
-            RandFlipd(keys=["image"], spatial_axis=1),
+            AddChannel(),
+            ScaleIntensity(),
+            Resize(spatial_size[:2]),
+            RandRotate90(prob=0.5, spatial_axes=[0, 1]),
+            RandFlip(prob=0.5, spatial_axis=1),
         ])
     else:  # 3D transforms for 3D ViT and 3D CNN
         return Compose([
-            LoadImaged(keys=["image"]),
-            EnsureChannelFirstd(keys=["image"]),
-            Resized(keys=["image"], spatial_size=spatial_size),
-            ScaleIntensityd(keys=["image"]),
-            RandRotate90d(keys=["image"], prob=0.5, spatial_axes=[0, 1]),
-            RandFlipd(keys=["image"], spatial_axis=0),
+            AddChannel(),
+            ScaleIntensity(),
+            Resize(spatial_size),
+            RandRotate90(prob=0.5, spatial_axes=[0, 1]),
+            RandFlip(prob=0.5, spatial_axis=0),
         ])
 
-
-def prepare_data(dataset_name: str, model_type: str, batch_size: int) -> Tuple[DataLoader, DataLoader, DataLoader]:
+def prepare_data(data_dir: str, model_type: str, batch_size: int) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """Prepare datasets and dataloaders."""
-    hf_dataset = load_huggingface_dataset(dataset_name)
     transforms = get_transforms(model_type)
 
-    train_ds = create_monai_dataset(hf_dataset['train'], transforms)
-    val_ds = create_monai_dataset(hf_dataset['validation'], transforms)
-    test_ds = create_monai_dataset(hf_dataset['test'], transforms)
+    train_ds = create_monai_dataset(Path(data_dir) / 'train', transforms, model_type)
+    val_ds = create_monai_dataset(Path(data_dir) / 'val', transforms, model_type)
+    test_ds = create_monai_dataset(Path(data_dir) / 'test', transforms, model_type)
 
     train_loader = create_data_loaders(train_ds, batch_size)
     val_loader = create_data_loaders(val_ds, batch_size)
