@@ -11,9 +11,11 @@ from models.train import train_model
 from models.evaluate import evaluate_model
 from utils.logger import setup_logger
 
+
 def load_config(config_path: str) -> dict:
     with open(config_path, 'r') as file:
         return yaml.safe_load(file)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Alzheimer's Detection Model Training")
@@ -34,21 +36,22 @@ def main():
         config['dataset']['batch_size'],
         config['dataset']['val_ratio'],
         config['dataset']['test_ratio'],
-        config['dataset']['input_size']  # New parameter
+        config['dataset']['input_size'],
     )
 
     model = create_model(
         model_type,
         config['model']['num_labels'],
         config['model']['freeze_layers'],
-        config['model']['input_size'],  # New parameter
-        config['model']['patch_size']   # New parameter
+        config['model']['input_size'],
+        config['model']['patch_size']
     )
 
     train_model(model, train_loader, val_loader, config['training'])
 
     results = evaluate_model(model, test_loader, config['training']['device'])
     logger.info(f"Evaluation results: {results}")
+
 
 if __name__ == "__main__":
     main()
