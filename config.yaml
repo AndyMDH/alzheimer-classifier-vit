@@ -1,11 +1,16 @@
 model:
-  type: '3d_vit'  # or '2d_vit' or '3d_cnn'
-  num_labels: 3  # Assuming 3 classes: AD, CN, MCI
+  type: 'vit3d'  # Options: '2d_vit', '3d_vit', '3d_cnn'
+  num_labels: 3
   freeze_layers: true
+  input_size: 224
+  patch_size: 16   # Options: 8, 16, 32
 
 dataset:
-  path: '/path/to/your/nifti/dataset'
+  path: './data/adni'
   batch_size: 32
+  val_ratio: 0.15
+  test_ratio: 0.15
+  input_size: 224  # New parameter, should match model input_size
 
 training:
   max_epochs: 100
@@ -25,4 +30,3 @@ training:
 paths:
   log_dir: './logs'
   output_dir: './output'
-
