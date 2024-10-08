@@ -1,5 +1,6 @@
+import os
 from pathlib import Path
-from typing import List, Tuple
+from typing import Tuple
 import nibabel as nib
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -10,23 +11,32 @@ from monai.transforms.intensity.array import (
     RandGaussianNoise, RandAdjustContrast
 )
 from monai.transforms.spatial.array import Resize, RandRotate90, RandFlip
-from monai.data import Dataset, DataLoader, CacheDataset
+from monai.data import Dataset
+from torch.utils.data import DataLoader, Subset
 
 
 class ADNIDataset(Dataset):
-    def __init__(self, file_list: List[Path], transform: Compose = None, model_type: str = '3d'):
+    def __init__(self, data_root: str, transform: Compose = None, model_type: str = '3d'):
         super().__init__()
-        self.file_list = file_list
+        self.data_root = Path(data_root)
         self.transform = transform
         self.model_type = model_type
+        self.file_list = self._create_file_list()
+
+    def _create_file_list(self):
+        file_list = []
+        for label in ['AD', 'MCI', 'CN']:
+            label_dir = self.data_root / 'raw' / label
+            for file_name in os.listdir(label_dir):
+                if file_name.endswith('.nii'):
+                    file_list.append((label_dir / file_name, label))
+        return file_list
 
     def __len__(self):
         return len(self.file_list)
 
     def __getitem__(self, idx):
-        file_path = self.file_list[idx]
-        label = file_path.parent.parent.name  # Assuming directory name is the label
-
+        file_path, label = self.file_list[idx]
         try:
             adni = nib.load(str(file_path))
             image = adni.get_fdata()
@@ -45,19 +55,7 @@ class ADNIDataset(Dataset):
             return None
 
 
-def create_monai_dataset(file_list: List[Path], transforms: Compose, cache_rate: float = 0.1) -> Dataset:
-    """Create a MONAI dataset from a list of file paths."""
-    return CacheDataset(data=[{"image": str(f)} for f in file_list], transform=transforms, cache_rate=cache_rate)
-
-
-def create_data_loaders(dataset: Dataset, batch_size: int, shuffle: bool = False,
-                        num_workers: int = 4) -> DataLoader:
-    """Create DataLoader with given dataset and batch size."""
-    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
-
-
 def get_transforms(model_type: str, spatial_size: Tuple[int, int, int] = (224, 224, 224)) -> Compose:
-    """Get MONAI transforms based on model type."""
     common_transforms = [
         AddChannel(),
         ScaleIntensity(),
@@ -67,13 +65,13 @@ def get_transforms(model_type: str, spatial_size: Tuple[int, int, int] = (224, 2
         RandAdjustContrast(prob=0.2)
     ]
 
-    if model_type == '2d_vit':
+    if model_type == '2d':
         return Compose(common_transforms + [
             Resize(spatial_size[:2]),
             RandRotate90(prob=0.5, spatial_axes=(0, 1)),
             RandFlip(prob=0.5, spatial_axis=1),
         ])
-    else:  # 3D transforms for 3D ViT and 3D CNN
+    else:  # 3D transforms
         return Compose(common_transforms + [
             Resize(spatial_size),
             RandRotate90(prob=0.5, spatial_axes=(0, 1)),
@@ -81,28 +79,36 @@ def get_transforms(model_type: str, spatial_size: Tuple[int, int, int] = (224, 2
         ])
 
 
-def prepare_data(data_dir: str, model_type: str, batch_size: int,
-                 val_ratio: float = 0.15, test_ratio: float = 0.15,
-                 input_size: int = 224) -> Tuple[DataLoader, DataLoader, DataLoader]:
-    """Prepare datasets and dataloaders with automatic splitting."""
-    transforms = get_transforms(model_type, spatial_size=(input_size, input_size, input_size))
+def create_data_loader(dataset: Dataset, batch_size: int, shuffle: bool = True,
+                       num_workers: int = 4) -> DataLoader:
+    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
 
-    # Get all ADNI files
-    data_dir = Path(data_dir)
-    all_files = list(data_dir.rglob('*.nii'))
+
+def prepare_data(data_root: str, model_type: str, batch_size: int,
+                 val_ratio: float = 0.15, test_ratio: float = 0.15,
+                 spatial_size: Tuple[int, int, int] = (224, 224, 224)) -> Tuple[DataLoader, DataLoader, DataLoader]:
+    transforms = get_transforms(model_type, spatial_size=spatial_size)
+
+    full_dataset = ADNIDataset(data_root, transform=transforms, model_type=model_type)
 
     # Split the data
-    train_files, test_files = train_test_split(all_files, test_size=test_ratio, random_state=42)
-    train_files, val_files = train_test_split(train_files, test_size=val_ratio / (1 - test_ratio), random_state=42)
+    train_val_indices, test_indices = train_test_split(
+        range(len(full_dataset)), test_size=test_ratio, random_state=42,
+        stratify=[item[1] for item in full_dataset.file_list]
+    )
+    train_indices, val_indices = train_test_split(
+        train_val_indices, test_size=val_ratio / (1 - test_ratio), random_state=42,
+        stratify=[full_dataset.file_list[i][1] for i in train_val_indices]
+    )
 
-    # Create datasets
-    train_ds = create_monai_dataset(train_files, transforms)
-    val_ds = create_monai_dataset(val_files, transforms)
-    test_ds = create_monai_dataset(test_files, transforms)
+    # Create subset datasets from the previously split data
+    train_dataset = Subset(full_dataset, train_indices)
+    val_dataset = Subset(full_dataset, val_indices)
+    test_dataset = Subset(full_dataset, test_indices)
 
     # Create data loaders
-    train_loader = create_data_loaders(train_ds, batch_size, shuffle=True)
-    val_loader = create_data_loaders(val_ds, batch_size)
-    test_loader = create_data_loaders(test_ds, batch_size)
+    train_loader = create_data_loader(train_dataset, batch_size, shuffle=True)
+    val_loader = create_data_loader(val_dataset, batch_size, shuffle=False)
+    test_loader = create_data_loader(test_dataset, batch_size, shuffle=False)
 
     return train_loader, val_loader, test_loader
