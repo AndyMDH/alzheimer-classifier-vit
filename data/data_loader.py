@@ -1,17 +1,16 @@
-"""
-Data loading and preprocessing module for Alzheimer's detection project.
-"""
-
 from pathlib import Path
 from typing import List, Tuple
 import nibabel as nib
 import numpy as np
 from sklearn.model_selection import train_test_split
-from monai.data import Dataset, DataLoader, CacheDataset
-from monai.transforms import (
-    Compose, AddChannel, ScaleIntensity, Resize, RandRotate90, RandFlip,
-    RandGaussianNoise, RandAdjustContrast, NormalizeIntensity, ThresholdIntensity
+from monai.transforms.compose import Compose
+from monai.transforms import AddChannel
+from monai.transforms.intensity.array import (
+    ScaleIntensity, NormalizeIntensity, ThresholdIntensity,
+    RandGaussianNoise, RandAdjustContrast
 )
+from monai.transforms.spatial.array import Resize, RandRotate90, RandFlip
+from monai.data import Dataset, DataLoader, CacheDataset
 
 
 class ADNIDataset(Dataset):
@@ -46,10 +45,9 @@ class ADNIDataset(Dataset):
             return None
 
 
-def create_monai_dataset(file_list: List[Path], transforms: Compose, model_type: str,
-                         cache_rate: float = 0.1) -> Dataset:
+def create_monai_dataset(file_list: List[Path], transforms: Compose, cache_rate: float = 0.1) -> Dataset:
     """Create a MONAI dataset from a list of file paths."""
-    return CacheDataset(data=[{"image": f} for f in file_list], transform=transforms, cache_rate=cache_rate)
+    return CacheDataset(data=[{"image": str(f)} for f in file_list], transform=transforms, cache_rate=cache_rate)
 
 
 def create_data_loaders(dataset: Dataset, batch_size: int, shuffle: bool = False,
@@ -58,13 +56,13 @@ def create_data_loaders(dataset: Dataset, batch_size: int, shuffle: bool = False
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
 
 
-def get_transforms(model_type: str, spatial_size: List[int] = [224, 224, 224]) -> Compose:
+def get_transforms(model_type: str, spatial_size: Tuple[int, int, int] = (224, 224, 224)) -> Compose:
     """Get MONAI transforms based on model type."""
     common_transforms = [
         AddChannel(),
         ScaleIntensity(),
         NormalizeIntensity(nonzero=True),
-        ThresholdIntensity(threshold=0, above=True),  # Basic skull stripping
+        ThresholdIntensity(threshold=0.0, above=True),  # Basic skull stripping
         RandGaussianNoise(prob=0.2, mean=0.0, std=0.1),
         RandAdjustContrast(prob=0.2)
     ]
@@ -72,13 +70,13 @@ def get_transforms(model_type: str, spatial_size: List[int] = [224, 224, 224]) -
     if model_type == '2d_vit':
         return Compose(common_transforms + [
             Resize(spatial_size[:2]),
-            RandRotate90(prob=0.5, spatial_axes=[0, 1]),
+            RandRotate90(prob=0.5, spatial_axes=(0, 1)),
             RandFlip(prob=0.5, spatial_axis=1),
         ])
     else:  # 3D transforms for 3D ViT and 3D CNN
         return Compose(common_transforms + [
             Resize(spatial_size),
-            RandRotate90(prob=0.5, spatial_axes=[0, 1]),
+            RandRotate90(prob=0.5, spatial_axes=(0, 1)),
             RandFlip(prob=0.5, spatial_axis=0),
         ])
 
@@ -87,7 +85,7 @@ def prepare_data(data_dir: str, model_type: str, batch_size: int,
                  val_ratio: float = 0.15, test_ratio: float = 0.15,
                  input_size: int = 224) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """Prepare datasets and dataloaders with automatic splitting."""
-    transforms = get_transforms(model_type, spatial_size=[input_size, input_size, input_size])
+    transforms = get_transforms(model_type, spatial_size=(input_size, input_size, input_size))
 
     # Get all ADNI files
     data_dir = Path(data_dir)
@@ -98,9 +96,9 @@ def prepare_data(data_dir: str, model_type: str, batch_size: int,
     train_files, val_files = train_test_split(train_files, test_size=val_ratio / (1 - test_ratio), random_state=42)
 
     # Create datasets
-    train_ds = create_monai_dataset(train_files, transforms, model_type)
-    val_ds = create_monai_dataset(val_files, transforms, model_type)
-    test_ds = create_monai_dataset(test_files, transforms, model_type)
+    train_ds = create_monai_dataset(train_files, transforms)
+    val_ds = create_monai_dataset(val_files, transforms)
+    test_ds = create_monai_dataset(test_files, transforms)
 
     # Create data loaders
     train_loader = create_data_loaders(train_ds, batch_size, shuffle=True)
