@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from transformers import ViTModel, ViTConfig
 
+
 class ViT3D(nn.Module):
     def __init__(self, num_labels: int, freeze_layers: bool = True, input_size: int = 224, patch_size: int = 16):
         super().__init__()
@@ -46,6 +47,10 @@ class ViT3D(nn.Module):
         logits = self.classifier(outputs.last_hidden_state[:, 0])
         return logits
 
-def create_vit_3d(num_labels: int, freeze_layers: bool = True, input_size: int = 224, patch_size: int = 16) -> nn.Module:
+
+def create_vit_3d(num_labels: int,
+                  freeze_layers: bool = True,
+                  input_size: int = 224,
+                  patch_size: int = 16) -> nn.Module:
     """Create a 3D Vision Transformer model with transfer learning."""
     return ViT3D(num_labels, freeze_layers, input_size, patch_size)
