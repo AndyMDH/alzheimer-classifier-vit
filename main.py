@@ -31,10 +31,19 @@ def main():
     train_loader, val_loader, test_loader = prepare_data(
         config['dataset']['path'],
         model_type,
-        config['dataset']['batch_size']
+        config['dataset']['batch_size'],
+        config['dataset']['val_ratio'],
+        config['dataset']['test_ratio'],
+        config['dataset']['input_size']  # New parameter
     )
 
-    model = create_model(model_type, config['model']['num_labels'], config['model']['freeze_layers'])
+    model = create_model(
+        model_type,
+        config['model']['num_labels'],
+        config['model']['freeze_layers'],
+        config['model']['input_size'],  # New parameter
+        config['model']['patch_size']   # New parameter
+    )
 
     train_model(model, train_loader, val_loader, config['training'])
 

@@ -5,7 +5,7 @@ from data.data_loader import create_monai_dataset, get_transforms, prepare_data
 
 class TestDataset(unittest.TestCase):
     def setUp(self):
-        self.data_dir = Path('path/to/test/dataset')  # Replace with a path to a small test dataset
+        self.data_dir = Path('path/to/test/dataset')
         self.model_type = '3d_vit'
 
     def test_create_monai_dataset(self):
