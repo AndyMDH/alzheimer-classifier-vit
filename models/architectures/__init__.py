@@ -7,8 +7,11 @@ from .vit2d import create_vit_2d
 from .cnn3d import create_cnn_3d
 
 
-def create_model(model_type: str, num_labels: int, freeze_layers: bool = True,
-                 input_size: int = 224, patch_size: int = 16):
+def create_model(model_type: str,
+                 num_labels: int,
+                 freeze_layers: bool = True,
+                 input_size: int = 224,
+                 patch_size: int = 16):
     """
     Create a model based on the specified type.
 
