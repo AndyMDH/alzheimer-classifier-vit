@@ -92,5 +92,5 @@ output/
 data/
 .DS_Store
 
-# NIfTI image directory
-nifti
+# ADNI image directory
+adni
