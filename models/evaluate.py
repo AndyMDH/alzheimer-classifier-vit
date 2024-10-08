@@ -7,8 +7,9 @@ from monai.handlers import StatsHandler, CheckpointLoader
 from monai.metrics import ROCAUCMetric
 from monai.inferers import SimpleInferer
 
+
 def evaluate_model(model, test_loader, device):
-    """Evaluate the model using MONAI's SupervisedEvaluator."""
+    """Evaluate the model using MONAI SupervisedEvaluator."""
     metric_name = "ROCAUC"
     metric = ROCAUCMetric()
 
