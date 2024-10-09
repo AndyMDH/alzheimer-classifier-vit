@@ -2,6 +2,10 @@
 
 This project implements an Alzheimer's disease detection system using Vision Transformers (ViT) and 3D Convolutional Neural Networks. It leverages transfer learning techniques to adapt pre-trained models for MRI scan analysis.
 
+Trying the 🤗Hugging Face Demo: Alzheimer Classifier 
+
+-------
+
 ## Table of Contents
 - [Project Overview](#project-overview)
 - [Installation](#installation)
