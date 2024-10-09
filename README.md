@@ -77,7 +77,9 @@ alzheimer_vit/
 ├── README.md
 └── requirements.txt
 ```
-## Architecture Visualisation
+## Project Visualisation
+
+## Classifier Performance
 
 
 ## Usage
@@ -94,19 +96,15 @@ This will load the dataset, prepare the data, create the specified model, train 
 
 The project implements three types of models:
 
-1. 2D Vision Transformer (`src/models/architectures/vit2d.py`)
-2. 3D Vision Transformer (`src/models/architectures/vit3d.py`)
-3. 3D CNN (`src/models/architectures/cnn3d.py`)
+1. 2D Vision Transformer (8/16/32 Patch Embeddings) (`src/models/architectures/vit2d.py`)
+2. 3D Vision Transformer (8/16/32 Patch Embeddings) (`src/models/architectures/vit3d.py`)
+3. 3D CNN (ResNet101)(`src/models/architectures/cnn3d.py`)
 
 You can specify which model to use in the `config.yaml` file.
 
 ## Dataset
 
 The project uses the Alzheimer's Disease Neuroimaging Initiative (ADNI) dataset. Data is loaded from Hugging Face datasets and preprocessed using MONAI transforms.
-
-## Training
-
-Training is managed by the `train_model` function in `src/models/train.py`. It uses MONAI's `SupervisedTrainer` for efficient training of medical imaging models.
 
 To start training, run:
 
@@ -119,16 +117,6 @@ Training parameters can be adjusted in the `config.yaml` file.
 ## Evaluation
 
 Model evaluation is performed using the `evaluate_model` function in `src/models/evaluate.py`. It uses MONAI's `SupervisedEvaluator` and calculates the ROC AUC metric.
-
-## Testing
-
-To run the tests:
-
-```
-python -m unittest discover tests
-```
-
-This will run all test files in the `tests/` directory.
 
 ## Contributing
 
