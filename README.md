@@ -2,9 +2,7 @@
 
 This project implements an Alzheimer's disease detection system using Vision Transformers (ViT) and 3D Convolutional Neural Networks. It leverages transfer learning techniques to adapt pre-trained models for MRI scan analysis.
 
-Trying the 🤗Hugging Face Demo: Alzheimer Classifier 
-
--------
+Trying the 🤗Hugging Face Demo: Alzheimer Classifier
 
 ## Table of Contents
 - [Project Overview](#project-overview)
@@ -79,6 +77,8 @@ alzheimer_vit/
 ├── README.md
 └── requirements.txt
 ```
+## Architecture Visualisation
+
 
 ## Usage
 
@@ -100,11 +100,9 @@ The project implements three types of models:
 
 You can specify which model to use in the `config.yaml` file.
 
-## Data
+## Dataset
 
 The project uses the Alzheimer's Disease Neuroimaging Initiative (ADNI) dataset. Data is loaded from Hugging Face datasets and preprocessed using MONAI transforms.
-
-To use your own dataset, modify the `load_huggingface_dataset` function in `src/data/data_loader.py`.
 
 ## Training
 
