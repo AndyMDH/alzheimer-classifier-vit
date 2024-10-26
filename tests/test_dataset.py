@@ -1,5 +1,4 @@
 import unittest
-import os
 from pathlib import Path
 from data.data_loader import ADNIDataset, get_transforms, prepare_data
 

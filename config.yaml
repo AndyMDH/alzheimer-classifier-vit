@@ -1,3 +1,5 @@
+# config.yaml
+
 model:
   type: 'vit3d'  # Options: '2d_vit', '3d_vit', '3d_cnn'
   num_labels: 3
@@ -6,11 +8,11 @@ model:
   patch_size: 16   # Options: 8, 16, 32
 
 dataset:
-  path: './data/adni'
+  path: './adni'
   batch_size: 32
   val_ratio: 0.15
   test_ratio: 0.15
-  input_size: 224  # New parameter, should match model input_size
+  input_size: 224  # Should match model input_size
 
 training:
   max_epochs: 100
@@ -27,6 +29,9 @@ training:
     patience: 15
     min_delta: 0.001
 
+# Add this section
 paths:
   log_dir: './logs'
   output_dir: './output'
+  checkpoint_dir: './checkpoints'
+  tensorboard_dir: './logs/tensorboard'

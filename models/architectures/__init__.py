@@ -6,12 +6,13 @@ from .vit3d import create_vit_3d
 from .vit2d import create_vit_2d
 from .cnn3d import create_cnn_3d
 
+__all__ = ['create_model', 'create_vit_3d', 'create_vit_2d', 'create_cnn_3d']
 
 def create_model(model_type: str,
-                 num_labels: int,
-                 freeze_layers: bool = True,
-                 input_size: int = 224,
-                 patch_size: int = 16):
+                num_labels: int,
+                freeze_layers: bool = True,
+                input_size: int = 224,
+                patch_size: int = 16):
     """
     Create a model based on the specified type.
 

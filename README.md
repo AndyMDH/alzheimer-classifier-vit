@@ -79,7 +79,7 @@ alzheimer_vit/
 ```
 ## Project Visualisation
 
-## Classifier Performance
+## Classifier Performance (table)
 
 
 ## Usage
