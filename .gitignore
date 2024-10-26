@@ -94,3 +94,15 @@ data/
 
 # ADNI image directory
 adni
+metadata/*.csv
+
+# Keep the directory structure
+!adni/raw/AD/.gitkeep
+!adni/raw/CN/.gitkeep
+!adni/raw/MCI/.gitkeep
+
+# Ignore ADNI data files
+adni/raw/**/*.nii
+adni/processed/**/*.nii
+metadata/*.csv
+!metadata/.gitkeep

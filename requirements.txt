@@ -1,11 +1,9 @@
 torch>=1.9.0
 torchvision>=0.10.0
-monai>=0.7.0
-transformers>=4.10.0
-datasets>=1.11.0
-numpy>=1.21.2
-scikit-learn>=0.24.2
-matplotlib>=3.4.3
-tensorboard>=2.6.0
-pyyaml>=6.0.1
+monai>=1.0.0
+pytorch-ignite>=0.4.9
 nibabel>=3.2.1
+transformers>=4.11.3
+pyyaml>=5.1.0
+tensorboard>=2.7.0
+scikit-learn>=0.24.2
