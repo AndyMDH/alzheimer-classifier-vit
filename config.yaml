@@ -1,28 +1,29 @@
 # Model configuration
 model:
-  type: 'vit3d'  # Options: 'vit3d', 'vit2d', '3d_cnn'
-  num_labels: 3  # Number of classes (AD, CN, MCI)
+  type: 'vit3d'
+  num_labels: 3
   freeze_layers: true
-  input_size: 224  # Input size for the model
-  patch_size: 16   # Options: 8, 16, 32
+  patch_size: 16
   dropout_rate: 0.1
-  attention_heads: 12
   hidden_size: 768
   num_layers: 12
+  attention_heads: 12
+  learning_rate: 1e-4
+  weight_decay: 0.01
 
 # Dataset configuration
 dataset:
-  path: './adni'  # Root path to the ADNI dataset
+  path: './adni'
   batch_size: 32
-  val_ratio: 0.15  # Validation split ratio
-  test_ratio: 0.15  # Test split ratio
-  input_size: 224  # Should match model input_size
+  val_ratio: 0.15
+  test_ratio: 0.15
+  input_size: 224
   preprocessing:
-    voxel_spacing: [1.5, 1.5, 1.5]  # Target voxel spacing for resampling
-    orientation: 'RAS'  # Target orientation
-    intensity_norm: true  # Whether to apply intensity normalization
-    foreground_crop: true  # Whether to crop to foreground
-    crop_margin: 10  # Margin for foreground cropping
+    voxel_spacing: [1.5, 1.5, 1.5]
+    orientation: 'RAS'
+    intensity_norm: true
+    foreground_crop: true
+    crop_margin: 10
   augmentation:
     enable: true
     gaussian_noise:
@@ -38,29 +39,27 @@ dataset:
 
 # Training configuration
 training:
-  max_epochs: 100
-  learning_rate: 0.001
-  device: 'cuda'  # Options: 'cuda', 'cpu'
+  epochs: 100
+  device: 'cuda'
   seed: 42
-  amp: true  # Automatic Mixed Precision
+  amp: true
   gradient_clip: 1.0
   optimizer:
-    type: 'adam'  # Options: 'adam', 'adamw', 'sgd'
+    type: 'adamw'
     weight_decay: 0.01
     beta1: 0.9
     beta2: 0.999
-  lr_scheduler:
-    type: 'reduce_on_plateau'  # Options: 'reduce_on_plateau', 'cosine', 'step'
-    factor: 0.1
-    patience: 10
+  scheduler:
+    type: 'cosine'
+    warmup_epochs: 5
     min_lr: 1.0e-6
   early_stopping:
     enable: true
     patience: 15
     min_delta: 0.001
-    monitor: 'val_loss'  # Options: 'val_loss', 'val_accuracy'
+    monitor: 'val_loss'
 
-# Logging and output configuration
+# Paths configuration
 paths:
   log_dir: './logs'
   output_dir: './output'
@@ -73,37 +72,20 @@ paths:
 
 # Logging configuration
 logging:
-  level: 'INFO'  # Options: 'DEBUG', 'INFO', 'WARNING', 'ERROR'
+  level: 'INFO'
   save_to_file: true
-  log_frequency: 10  # Log every N batches
-  metrics:
-    - 'loss'
-    - 'accuracy'
-    - 'precision'
-    - 'recall'
-    - 'f1'
-    - 'confusion_matrix'
+  log_frequency: 10
+  metrics: ['loss', 'accuracy', 'precision', 'recall', 'f1', 'confusion_matrix']
 
 # Validation configuration
 validation:
-  frequency: 1  # Validate every N epochs
-  metrics:
-    - 'accuracy'
-    - 'precision'
-    - 'recall'
-    - 'f1'
-    - 'confusion_matrix'
+  frequency: 1
   save_best: true
-  save_frequency: 5  # Save checkpoint every N epochs
+  save_frequency: 5
+  metrics: ['accuracy', 'precision', 'recall', 'f1', 'confusion_matrix']
 
 # Testing configuration
 testing:
   save_predictions: true
-  output_format: 'csv'  # Options: 'csv', 'json'
-  metrics:
-    - 'accuracy'
-    - 'precision'
-    - 'recall'
-    - 'f1'
-    - 'confusion_matrix'
-    - 'roc_auc'
+  output_format: 'csv'
+  metrics: ['accuracy', 'precision', 'recall', 'f1', 'confusion_matrix', 'roc_auc']
