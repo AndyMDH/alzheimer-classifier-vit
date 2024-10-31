@@ -45,39 +45,31 @@ class ViT3D(nn.Module):
         self.config.num_patches = self.num_patches
 
         # Create patch embedding
-        self.patch_embed = nn.Sequential(
-            nn.Conv3d(
-                1,  # input channels
-                self.config.hidden_size,
-                kernel_size=(patch_size, patch_size, patch_size),
-                stride=(patch_size, patch_size, patch_size)
-            ),
-            nn.LayerNorm([self.config.hidden_size])
+        self.patch_embed = nn.Conv3d(
+            1,  # input channels
+            self.config.hidden_size,
+            kernel_size=(patch_size, patch_size, patch_size),
+            stride=(patch_size, patch_size, patch_size)
         )
 
-        # Initialize ViT
-        self.vit = ViTModel(self.config)
+        # Initialize transformer
+        self.transformer = ViTModel(self.config)
 
-        # Replace patch embeddings with our 3D version
-        self.vit.embeddings.patch_embeddings = self.patch_embed
-
-        # Adjust position embeddings for 3D
-        self.vit.embeddings.position_embeddings = nn.Parameter(
+        # Create CLS token and position embeddings
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, self.config.hidden_size))
+        self.pos_embed = nn.Parameter(
             torch.zeros(1, self.num_patches + 1, self.config.hidden_size)
         )
 
-        # Initialize position embeddings
-        self._init_3d_pos_embeddings()
+        # Create learnable temperature parameter for attention
+        self.temp = nn.Parameter(torch.ones([]) * 0.07)
 
-        # Create classifier
-        self.layer_norm = nn.LayerNorm(self.config.hidden_size)
+        # Layer normalization and dropout
+        self.norm = nn.LayerNorm(self.config.hidden_size)
         self.dropout = nn.Dropout(dropout_rate)
-        self.classifier = nn.Sequential(
-            nn.Linear(self.config.hidden_size, self.config.hidden_size),
-            nn.GELU(),
-            nn.Dropout(dropout_rate),
-            nn.Linear(self.config.hidden_size, num_labels)
-        )
+
+        # Classification head
+        self.fc = nn.Linear(self.config.hidden_size, num_labels)
 
         # Initialize weights
         self._init_weights()
@@ -92,108 +84,84 @@ class ViT3D(nn.Module):
         logger.info(f"Total parameters: {total_params:,}")
         logger.info(f"Trainable parameters: {trainable_params:,}")
 
-    def _init_3d_pos_embeddings(self):
-        """Initialize position embeddings for 3D data."""
-        patch_dim = int(round(self.num_patches ** (1 / 3)))
-        position_embedding = torch.zeros(1, self.num_patches + 1, self.config.hidden_size)
-
-        # Create positional encodings for each dimension
-        for pos in range(self.num_patches):
-            # Convert linear position to 3D coordinates
-            z = pos // (patch_dim * patch_dim)
-            y = (pos % (patch_dim * patch_dim)) // patch_dim
-            x = pos % patch_dim
-
-            for i in range(self.config.hidden_size // 3):
-                div_term = np.exp(i * -math.log(10000.0) / (self.config.hidden_size // 3))
-                pos_x = x * div_term
-                pos_y = y * div_term
-                pos_z = z * div_term
-
-                position_embedding[0, pos + 1, i * 3] = math.sin(pos_x)
-                position_embedding[0, pos + 1, i * 3 + 1] = math.sin(pos_y)
-                position_embedding[0, pos + 1, i * 3 + 2] = math.sin(pos_z)
-
-        self.vit.embeddings.position_embeddings.data.copy_(position_embedding)
-
     def _init_weights(self):
-        """Initialize model weights."""
-        # Initialize patch embeddings
-        nn.init.normal_(self.patch_embed[0].weight, std=0.02)
-        if self.patch_embed[0].bias is not None:
-            nn.init.zeros_(self.patch_embed[0].bias)
+        """Initialize weights with truncated normal distribution."""
+        nn.init.trunc_normal_(self.cls_token, std=0.02)
+        nn.init.trunc_normal_(self.pos_embed, std=0.02)
+        self.apply(self._init_weights_)
 
-        # Initialize classifier
-        for module in self.classifier.modules():
-            if isinstance(module, nn.Linear):
-                nn.init.normal_(module.weight, std=0.02)
-                if module.bias is not None:
-                    nn.init.zeros_(module.bias)
+    def _init_weights_(self, m):
+        """Initialize network weights."""
+        if isinstance(m, nn.Linear):
+            nn.init.trunc_normal_(m.weight, std=0.02)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.ones_(m.weight)
+            nn.init.zeros_(m.bias)
+        elif isinstance(m, nn.Conv3d):
+            nn.init.kaiming_normal_(m.weight)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
 
     def _freeze_pretrained_layers(self):
-        """Freeze pretrained layers."""
-        for param in self.vit.parameters():
+        """Freeze pretrained layers while keeping new layers trainable."""
+        for param in self.transformer.parameters():
             param.requires_grad = False
 
         # Unfreeze task-specific layers
         for param in self.patch_embed.parameters():
             param.requires_grad = True
-        self.vit.embeddings.position_embeddings.requires_grad = True
-        for param in self.classifier.parameters():
-            param.requires_grad = True
-        self.layer_norm.requires_grad = True
+        self.cls_token.requires_grad = True
+        self.pos_embed.requires_grad = True
+        self.fc.requires_grad = True
+        self.norm.requires_grad = True
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass."""
-        B, C, D, H, W = x.shape
-        assert C == 1, f"Expected 1 channel, got {C}"
-        assert D == H == W == self.input_size, \
-            f"Expected {self.input_size}x{self.input_size}x{self.input_size} input, got {D}x{H}x{W}"
+        """Forward pass of the model."""
+        # Input shape: [B, C, D, H, W]
+        B = x.shape[0]
 
-        # Extract patches
+        # Patch embedding: [B, C, D, H, W] -> [B, hidden_size, D', H', W']
         x = self.patch_embed(x)
-        x = x.flatten(2).transpose(1, 2)
 
-        # Add classification token
-        cls_token = self.vit.embeddings.cls_token.expand(B, -1, -1)
-        x = torch.cat((cls_token, x), dim=1)
+        # Flatten patches: [B, hidden_size, D', H', W'] -> [B, num_patches, hidden_size]
+        D = x.size(2)
+        H = x.size(3)
+        W = x.size(4)
+        x = x.permute(0, 2, 3, 4, 1).contiguous()  # [B, D', H', W', hidden_size]
+        x = x.view(B, D * H * W, -1)  # [B, num_patches, hidden_size]
+
+        # Add CLS token
+        cls_tokens = self.cls_token.expand(B, -1, -1)
+        x = torch.cat((cls_tokens, x), dim=1)
 
         # Add position embeddings
-        x = x + self.vit.embeddings.position_embeddings
-
-        # Apply ViT encoder
-        outputs = self.vit(inputs_embeds=x)
-        x = outputs.last_hidden_state[:, 0]
-
-        # Apply classification head
-        x = self.layer_norm(x)
+        x = x + self.pos_embed
         x = self.dropout(x)
-        logits = self.classifier(x)
 
-        return logits
+        # Apply transformer
+        x = self.transformer(inputs_embeds=x, return_dict=True).last_hidden_state
 
+        # Use CLS token for classification
+        x = x[:, 0]  # Take CLS token
+        x = self.norm(x)
+        x = self.dropout(x)
+        x = self.fc(x)
 
-def create_vit_3d(
-        num_labels: int,
-        freeze_layers: bool = True,
-        input_size: int = 224,
-        patch_size: int = 16,
-        dropout_rate: float = 0.1
-) -> nn.Module:
-    """Create ViT3D model."""
-    try:
-        model = ViT3D(
-            num_labels=num_labels,
-            freeze_layers=freeze_layers,
-            input_size=input_size,
-            patch_size=patch_size,
-            dropout_rate=dropout_rate
-        )
-        logger.info("Created ViT3D model successfully")
-        return model
-    except Exception as e:
-        logger.error(f"Error creating ViT3D model: {str(e)}")
-        raise
+        return x
 
 
-__all__ = ['create_vit_3d', 'ViT3D']
+def create_model(config: dict) -> nn.Module:
+    """Create a ViT3D model from config."""
+    model = ViT3D(
+        num_labels=config['model']['num_labels'],
+        freeze_layers=config['model']['freeze_layers'],
+        input_size=config['model']['input_size'],
+        patch_size=config['model']['patch_size'],
+        dropout_rate=config['model'].get('dropout_rate', 0.1)
+    )
+    return model
+
+
+__all__ = ['create_model', 'ViT3D']

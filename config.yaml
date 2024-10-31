@@ -1,14 +1,16 @@
+# Model configuration
 model:
-  type: 'vit3d'  # Model type
-  num_labels: 3  # Number of classes (AD, CN, MCI)
+  type: 'vit3d'
+  num_labels: 3
   freeze_layers: true
   input_size: 224
   patch_size: 16
   dropout_rate: 0.1
 
+# Dataset configuration
 dataset:
   path: './adni'
-  batch_size: 32
+  batch_size: 8
   val_ratio: 0.15
   test_ratio: 0.15
   input_size: 224
@@ -19,14 +21,38 @@ dataset:
     foreground_crop: true
     crop_margin: 10
 
+# Training configuration
 training:
   epochs: 100
-  device: 'cuda'
+  device: 'cuda'  # will fall back to CPU if CUDA not available
   seed: 42
   learning_rate: 0.001
+  gradient_clip: 1.0
   optimizer:
     type: 'adamw'
     weight_decay: 0.01
   scheduler:
     type: 'cosine'
+    T_0: 10  # Number of iterations for the first restart
     warmup_epochs: 5
+    min_lr: 1.0e-6
+  early_stopping:
+    enable: true
+    patience: 15
+    min_delta: 0.001
+
+# Paths configuration
+paths:
+  output_dir: './output'
+  log_dir: './logs'
+  checkpoint_dir: './checkpoints'
+  data:
+    raw: './adni/raw'
+    processed: './adni/processed'
+    metadata: './metadata/adni.csv'
+
+# Logging configuration
+logging:
+  level: 'INFO'
+  save_to_file: true
+  log_frequency: 10

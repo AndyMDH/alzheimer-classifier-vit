@@ -1,4 +1,3 @@
-```python
 """
 Visualization utilities for Alzheimer's detection.
 """
@@ -165,7 +164,6 @@ def plot_patches(
 
     plt.close()
 
-
 def visualize_predictions(
         model: torch.nn.Module,
         batch: dict,
@@ -200,4 +198,21 @@ def visualize_predictions(
         for i in range(num_samples):
             # Image
             axes[i, 0].imshow(images[i, 0, images.shape[2] // 2].cpu(), cmap='gray')
-            axes[i, 0].set_title(f'True: {class_names[labels[i]]
+            axes[i, 0].set_title(f'True: {class_names[labels[i]]} | Pred: {class_names[predicted[i]]}')
+            axes[i, 0].axis('off')
+
+            # Probabilities
+            probs = probabilities[i].cpu().numpy()
+            axes[i, 1].bar(class_names, probs)
+            axes[i, 1].set_ylim([0, 1])
+            axes[i, 1].set_title('Class Probabilities')
+
+        plt.tight_layout()
+
+        if save_path:
+            plt.savefig(save_path)
+            logger.info(f"Saved prediction visualization to {save_path}")
+        else:
+            plt.show()
+
+        plt.close()
