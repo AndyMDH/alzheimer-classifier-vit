@@ -1,17 +1,11 @@
-# Model configuration
 model:
-  type: 'vit3d'
-  num_labels: 3
+  type: 'vit3d'  # Model type
+  num_labels: 3  # Number of classes (AD, CN, MCI)
   freeze_layers: true
+  input_size: 224
   patch_size: 16
   dropout_rate: 0.1
-  hidden_size: 768
-  num_layers: 12
-  attention_heads: 12
-  learning_rate: 1e-4
-  weight_decay: 0.01
 
-# Dataset configuration
 dataset:
   path: './adni'
   batch_size: 32
@@ -24,68 +18,15 @@ dataset:
     intensity_norm: true
     foreground_crop: true
     crop_margin: 10
-  augmentation:
-    enable: true
-    gaussian_noise:
-      prob: 0.2
-      mean: 0.0
-      std: 0.1
-    contrast:
-      prob: 0.2
-    rotation:
-      prob: 0.5
-    flip:
-      prob: 0.5
 
-# Training configuration
 training:
   epochs: 100
   device: 'cuda'
   seed: 42
-  amp: true
-  gradient_clip: 1.0
+  learning_rate: 0.001
   optimizer:
     type: 'adamw'
     weight_decay: 0.01
-    beta1: 0.9
-    beta2: 0.999
   scheduler:
     type: 'cosine'
     warmup_epochs: 5
-    min_lr: 1.0e-6
-  early_stopping:
-    enable: true
-    patience: 15
-    min_delta: 0.001
-    monitor: 'val_loss'
-
-# Paths configuration
-paths:
-  log_dir: './logs'
-  output_dir: './output'
-  checkpoint_dir: './checkpoints'
-  tensorboard_dir: './logs/tensorboard'
-  data:
-    raw: './adni/raw'
-    processed: './adni/processed'
-    metadata: './adni/metadata/adni.csv'
-
-# Logging configuration
-logging:
-  level: 'INFO'
-  save_to_file: true
-  log_frequency: 10
-  metrics: ['loss', 'accuracy', 'precision', 'recall', 'f1', 'confusion_matrix']
-
-# Validation configuration
-validation:
-  frequency: 1
-  save_best: true
-  save_frequency: 5
-  metrics: ['accuracy', 'precision', 'recall', 'f1', 'confusion_matrix']
-
-# Testing configuration
-testing:
-  save_predictions: true
-  output_format: 'csv'
-  metrics: ['accuracy', 'precision', 'recall', 'f1', 'confusion_matrix', 'roc_auc']
