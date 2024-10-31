@@ -52,7 +52,11 @@ class ViT3D(nn.Module):
             stride=(patch_size, patch_size, patch_size)
         )
 
-        # Initialize transformer
+        # Create layernorm
+        self.norm_pre = nn.LayerNorm(self.config.hidden_size)
+        self.norm_post = nn.LayerNorm(self.config.hidden_size)
+
+        # Create transformer encoder
         self.transformer = ViTModel(self.config)
 
         # Create CLS token and position embeddings
@@ -61,15 +65,14 @@ class ViT3D(nn.Module):
             torch.zeros(1, self.num_patches + 1, self.config.hidden_size)
         )
 
-        # Create learnable temperature parameter for attention
-        self.temp = nn.Parameter(torch.ones([]) * 0.07)
-
-        # Layer normalization and dropout
-        self.norm = nn.LayerNorm(self.config.hidden_size)
+        # Dropout and classification head
         self.dropout = nn.Dropout(dropout_rate)
-
-        # Classification head
-        self.fc = nn.Linear(self.config.hidden_size, num_labels)
+        self.fc = nn.Sequential(
+            nn.Linear(self.config.hidden_size, self.config.hidden_size),
+            nn.GELU(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(self.config.hidden_size, num_labels)
+        )
 
         # Initialize weights
         self._init_weights()
@@ -85,27 +88,24 @@ class ViT3D(nn.Module):
         logger.info(f"Trainable parameters: {trainable_params:,}")
 
     def _init_weights(self):
-        """Initialize weights with truncated normal distribution."""
+        """Initialize weights."""
         nn.init.trunc_normal_(self.cls_token, std=0.02)
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
-        self.apply(self._init_weights_)
 
-    def _init_weights_(self, m):
-        """Initialize network weights."""
-        if isinstance(m, nn.Linear):
-            nn.init.trunc_normal_(m.weight, std=0.02)
-            if m.bias is not None:
-                nn.init.zeros_(m.bias)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.ones_(m.weight)
-            nn.init.zeros_(m.bias)
-        elif isinstance(m, nn.Conv3d):
-            nn.init.kaiming_normal_(m.weight)
-            if m.bias is not None:
-                nn.init.zeros_(m.bias)
+        # Initialize patch embeddings
+        nn.init.kaiming_normal_(self.patch_embed.weight)
+        if self.patch_embed.bias is not None:
+            nn.init.zeros_(self.patch_embed.bias)
+
+        # Initialize fc layers
+        for layer in self.fc:
+            if isinstance(layer, nn.Linear):
+                nn.init.trunc_normal_(layer.weight, std=0.02)
+                if layer.bias is not None:
+                    nn.init.zeros_(layer.bias)
 
     def _freeze_pretrained_layers(self):
-        """Freeze pretrained layers while keeping new layers trainable."""
+        """Freeze pretrained layers."""
         for param in self.transformer.parameters():
             param.requires_grad = False
 
@@ -114,8 +114,8 @@ class ViT3D(nn.Module):
             param.requires_grad = True
         self.cls_token.requires_grad = True
         self.pos_embed.requires_grad = True
-        self.fc.requires_grad = True
-        self.norm.requires_grad = True
+        for param in self.fc.parameters():
+            param.requires_grad = True
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass of the model."""
@@ -126,11 +126,10 @@ class ViT3D(nn.Module):
         x = self.patch_embed(x)
 
         # Flatten patches: [B, hidden_size, D', H', W'] -> [B, num_patches, hidden_size]
-        D = x.size(2)
-        H = x.size(3)
-        W = x.size(4)
-        x = x.permute(0, 2, 3, 4, 1).contiguous()  # [B, D', H', W', hidden_size]
-        x = x.view(B, D * H * W, -1)  # [B, num_patches, hidden_size]
+        x = x.flatten(2).transpose(1, 2)
+
+        # Apply pre-norm
+        x = self.norm_pre(x)
 
         # Add CLS token
         cls_tokens = self.cls_token.expand(B, -1, -1)
@@ -140,12 +139,15 @@ class ViT3D(nn.Module):
         x = x + self.pos_embed
         x = self.dropout(x)
 
-        # Apply transformer
-        x = self.transformer(inputs_embeds=x, return_dict=True).last_hidden_state
+        # Apply transformer (using the transformer's encoder directly)
+        encoder_outputs = self.transformer.encoder(x)
+        x = encoder_outputs[0] if isinstance(encoder_outputs, tuple) else encoder_outputs
 
         # Use CLS token for classification
-        x = x[:, 0]  # Take CLS token
-        x = self.norm(x)
+        x = x[:, 0]
+
+        # Apply final norm and classification
+        x = self.norm_post(x)
         x = self.dropout(x)
         x = self.fc(x)
 
