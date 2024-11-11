@@ -1,11 +1,12 @@
 # Model configuration
 model:
-  type: 'vit3d'
+  type: 'multiview_vit'  # Changed to multi-view approach
   num_labels: 3
   freeze_layers: true
   input_size: 224
-  patch_size: 16
-  dropout_rate: 0.1
+  model_name: 'google/vit-large-patch16-224-in21k'  # Using larger model
+  dropout_rate: 0.2  # Increased for better regularization
+  use_attention: true  # Enable attention-based slice selection
 
 # Dataset configuration
 dataset:
@@ -20,21 +21,45 @@ dataset:
     intensity_norm: true
     foreground_crop: true
     crop_margin: 10
+    # Added preprocessing specific to multi-view
+    slice_selection:
+      method: 'attention'  # Can be 'center', 'attention', or 'multi'
+      num_slices: 5  # Number of slices to consider for attention
+    augmentation:
+      enable: true
+      rotation_range: 10
+      contrast_range: [0.9, 1.1]
+      brightness_range: [0.9, 1.1]
+      noise_std: 0.02
 
 # Training configuration
 training:
-  epochs: 50
+  epochs: 100  # Increased epochs since training is more stable
   device: 'cuda'  # will fall back to CPU if not available
   seed: 42
-  learning_rate: 0.0001  # This needs to be at the root of training config
+  learning_rate: 0.0001
   optimizer:
     type: 'adamw'
     weight_decay: 0.01
+    layer_specific_lrs:  # Different learning rates for different parts
+      vit: 0.00001  # Lower LR for pretrained parts
+      attention: 0.0001
+      fusion: 0.0001
+      classifier: 0.0001
   scheduler:
     type: 'cosine'
-    T_0: 5
-    warmup_epochs: 2
+    T_0: 10  # Increased period
+    warmup_epochs: 5  # More warmup epochs
     min_lr: 1.0e-6
+  early_stopping:
+    enable: true
+    patience: 10
+    min_delta: 0.001
+  gradient_clipping:
+    enable: true
+    max_norm: 1.0
+  label_smoothing: 0.1  # Added label smoothing
+  mixed_precision: true  # Enable mixed precision training
 
 # Paths configuration
 paths:
@@ -51,3 +76,32 @@ logging:
   level: 'INFO'
   save_to_file: true
   log_frequency: 10
+  wandb:  # Added W&B integration
+    enable: true
+    project: 'alzheimer_detection'
+    tags: ['multiview', 'vit-large']
+    log_images: true  # Log attention maps and predictions
+
+# Validation configuration
+validation:
+  frequency: 1  # Validate every epoch
+  metrics:
+    - accuracy
+    - precision
+    - recall
+    - f1
+    - confusion_matrix
+  save_predictions: true
+  save_attention_maps: true  # Save attention maps for visualization
+
+# Testing configuration
+testing:
+  save_predictions: true
+  ensemble:
+    enable: true
+    num_models: 3  # Use ensemble of last 3 checkpoints
+  visualization:
+    enable: true
+    attention_maps: true
+    confusion_matrix: true
+    misclassified_samples: true

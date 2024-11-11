@@ -1,85 +1,76 @@
 """
-3D Vision Transformer model for Alzheimer's detection with transfer learning.
+Multi-view Vision Transformer for Alzheimer's detection using transfer learning.
 """
 
 import torch
 import torch.nn as nn
-from transformers import ViTModel, ViTConfig
+from transformers import ViTModel
 import logging
-import numpy as np
-import math
+from torch.nn import functional as F
 
 logger = logging.getLogger(__name__)
 
-class ViT3D(nn.Module):
+class MultiViewViT(nn.Module):
     def __init__(
             self,
             num_labels: int,
             freeze_layers: bool = True,
             input_size: int = 224,
-            patch_size: int = 16,
             dropout_rate: float = 0.1
     ):
         super().__init__()
 
-        # Input validation
-        assert patch_size in [8, 16, 32], "Patch size must be 8, 16, or 32"
-        assert input_size % patch_size == 0, "Input size must be divisible by patch size"
-
         self.input_size = input_size
-        self.patch_size = patch_size
-        self.num_patches = (input_size // patch_size) ** 3  # 14^3 = 2744 patches
 
-        logger.info(f"Initializing ViT3D with:")
-        logger.info(f"- Input size: {input_size}x{input_size}x{input_size}")
-        logger.info(f"- Patch size: {patch_size}x{patch_size}x{patch_size}")
-        logger.info(f"- Number of patches: {self.num_patches}")
+        logger.info(f"Initializing MultiViewViT with:")
+        logger.info(f"- Input size: {input_size}x{input_size}")
+        logger.info(f"- Views: Axial, Sagittal, Coronal")
         logger.info(f"- Number of classes: {num_labels}")
 
-        # Load pre-trained ViT
+        # Load pre-trained ViT (now using a larger variant)
         self.vit = ViTModel.from_pretrained(
-            'google/vit-base-patch16-224-in21k',
-            add_pooling_layer=False,
-            ignore_mismatched_sizes=True
+            'google/vit-large-patch16-224-in21k',  # Using larger model for better features
+            add_pooling_layer=False
         )
-        hidden_size = self.vit.config.hidden_size  # 768
+        hidden_size = self.vit.config.hidden_size  # 1024 for large model
 
-        # Create 3D patch embedding
-        self.patch_embed = nn.Sequential(
-            # Conv3d to extract patches
-            nn.Conv3d(
-                in_channels=1,
-                out_channels=hidden_size,
-                kernel_size=patch_size,
-                stride=patch_size
-            ),
-            # Reshape to [B, num_patches, hidden_size]
-            Rearrange('b c d h w -> b (d h w) c'),
+        # Channel projection to convert 1-channel MRI to 3-channel input
+        self.channel_proj = nn.Sequential(
+            nn.Conv2d(1, 3, 1, 1),
+            nn.BatchNorm2d(3),
+            nn.GELU()
         )
 
-        # Create layernorm
-        self.pre_norm = nn.LayerNorm(hidden_size)
-        self.post_norm = nn.LayerNorm(hidden_size)
+        # Adaptive slice selection
+        self.slice_attention = nn.Sequential(
+            nn.Conv3d(1, 16, kernel_size=3, padding=1),
+            nn.GELU(),
+            nn.Conv3d(16, 3, kernel_size=1),  # Output 3 attention maps for 3 views
+            nn.Softmax(dim=2)  # Softmax along depth dimension
+        )
 
-        # Create CLS token and position embeddings
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, hidden_size))
-        self.pos_embed = nn.Parameter(torch.zeros(1, self.num_patches + 1, hidden_size))
-
-        # Dropout and classification head
-        self.dropout = nn.Dropout(dropout_rate)
-        self.fc = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size),
+        # Feature fusion module
+        self.fusion = nn.Sequential(
+            nn.Linear(hidden_size * 3, hidden_size * 2),
+            nn.LayerNorm(hidden_size * 2),
             nn.GELU(),
             nn.Dropout(dropout_rate),
-            nn.Linear(hidden_size, num_labels)
+            nn.Linear(hidden_size * 2, hidden_size),
+            nn.LayerNorm(hidden_size),
+            nn.GELU(),
+            nn.Dropout(dropout_rate)
+        )
+
+        # Classification head
+        self.classifier = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size // 2),
+            nn.GELU(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(hidden_size // 2, num_labels)
         )
 
         # Initialize weights
         self._init_weights()
-
-        # Use transformers layers directly
-        self.encoder = self.vit.encoder
-        self.layernorm = self.vit.layernorm
 
         # Freeze pre-trained layers if specified
         if freeze_layers:
@@ -92,80 +83,70 @@ class ViT3D(nn.Module):
         logger.info(f"Trainable parameters: {trainable_params:,}")
 
     def _init_weights(self):
-        """Initialize weights."""
-        nn.init.trunc_normal_(self.cls_token, std=0.02)
-        nn.init.trunc_normal_(self.pos_embed, std=0.02)
-
-        # Initialize conv layer
-        nn.init.trunc_normal_(self.patch_embed[0].weight, std=0.02)
-        if self.patch_embed[0].bias is not None:
-            nn.init.zeros_(self.patch_embed[0].bias)
-
-        # Initialize fc layers
-        for layer in self.fc:
-            if isinstance(layer, nn.Linear):
-                nn.init.trunc_normal_(layer.weight, std=0.02)
-                if layer.bias is not None:
-                    nn.init.zeros_(layer.bias)
+        """Initialize custom layers."""
+        for m in [self.channel_proj, self.fusion, self.classifier]:
+            if isinstance(m, (nn.Linear, nn.Conv2d)):
+                nn.init.kaiming_normal_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
 
     def _freeze_pretrained_layers(self):
-        """Freeze pretrained transformer layers."""
-        for param in self.encoder.parameters():
+        """Freeze pretrained ViT layers."""
+        for param in self.vit.parameters():
             param.requires_grad = False
-        for param in self.layernorm.parameters():
-            param.requires_grad = False
+
+    def _get_weighted_slices(self, x):
+        """Get attention-weighted slices from each view."""
+        B, C, D, H, W = x.shape
+
+        # Generate attention weights
+        attention = self.slice_attention(x)  # [B, 3, D, H, W]
+
+        # Extract weighted slices for each view
+        axial = (x[:, :, :, :, :] * attention[:, 0:1, :, :, :]).sum(dim=2)
+        sagittal = (x[:, :, :, :, :] * attention[:, 1:2, :, :, :]).sum(dim=3)
+        coronal = (x[:, :, :, :, :] * attention[:, 2:3, :, :, :]).sum(dim=4)
+
+        return axial, sagittal, coronal
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass of the model."""
-        B = x.shape[0]  # Batch size
+        """Forward pass using attention-weighted views."""
+        B = x.shape[0]
 
-        # Extract and embed patches: [B, 1, 224, 224, 224] -> [B, 2744, 768]
-        x = self.patch_embed(x)
+        # Get weighted slices from each view
+        axial, sagittal, coronal = self._get_weighted_slices(x)
 
-        # Add CLS token: [B, 2744, 768] -> [B, 2745, 768]
-        cls_tokens = self.cls_token.expand(B, -1, -1)
-        x = torch.cat((cls_tokens, x), dim=1)
+        # Process each view
+        view_features = []
+        for view in [axial, sagittal, coronal]:
+            # Project to 3 channels and normalize
+            view = self.channel_proj(view)
 
-        # Add position embeddings and normalize
-        x = x + self.pos_embed
-        x = self.pre_norm(x)
-        x = self.dropout(x)
+            # Normalize to ImageNet range
+            view = F.interpolate(view, size=(224, 224))
+            view = (view - view.mean()) / view.std()
 
-        # Pass through transformer encoder directly
-        encoder_outputs = self.encoder(x)
-        sequence_output = encoder_outputs[0]
+            # Pass through ViT
+            outputs = self.vit(pixel_values=view, return_dict=True)
+            view_features.append(outputs.last_hidden_state[:, 0])  # Use CLS token
 
-        # Apply final layernorm (from ViT)
-        sequence_output = self.layernorm(sequence_output)
-
-        # Take CLS token output and classify
-        x = sequence_output[:, 0]
-        x = self.post_norm(x)
-        x = self.dropout(x)
-        x = self.fc(x)
+        # Combine view features
+        x = torch.cat(view_features, dim=1)
+        x = self.fusion(x)
+        x = self.classifier(x)
 
         return x
 
 
-class Rearrange(nn.Module):
-    def __init__(self, pattern):
-        super().__init__()
-        self.pattern = pattern
-
-    def forward(self, x):
-        return x.permute(0, 2, 3, 4, 1).reshape(x.size(0), -1, x.size(1))
-
-
 def create_model(config: dict) -> nn.Module:
-    """Create a ViT3D model from config."""
-    model = ViT3D(
+    """Create a multi-view ViT model from config."""
+    model = MultiViewViT(
         num_labels=config['model']['num_labels'],
-        freeze_layers=config['model']['freeze_layers'],
-        input_size=config['model']['input_size'],
-        patch_size=config['model']['patch_size'],
+        freeze_layers=config['model'].get('freeze_layers', True),
+        input_size=config['model'].get('input_size', 224),
         dropout_rate=config['model'].get('dropout_rate', 0.1)
     )
     return model
-
-
-__all__ = ['create_model', 'ViT3D']
