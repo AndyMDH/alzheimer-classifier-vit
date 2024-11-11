@@ -23,23 +23,18 @@ dataset:
 
 # Training configuration
 training:
-  epochs: 100
-  device: 'cuda'  # will fall back to CPU if CUDA not available
+  epochs: 50
+  device: 'cuda'  # will fall back to CPU if not available
   seed: 42
-  learning_rate: 0.001
-  gradient_clip: 1.0
+  learning_rate: 0.0001  # This needs to be at the root of training config
   optimizer:
     type: 'adamw'
     weight_decay: 0.01
   scheduler:
     type: 'cosine'
-    T_0: 10  # Number of iterations for the first restart
-    warmup_epochs: 5
+    T_0: 5
+    warmup_epochs: 2
     min_lr: 1.0e-6
-  early_stopping:
-    enable: true
-    patience: 15
-    min_delta: 0.001
 
 # Paths configuration
 paths:

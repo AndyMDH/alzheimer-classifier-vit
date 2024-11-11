@@ -11,7 +11,6 @@ import math
 
 logger = logging.getLogger(__name__)
 
-
 class ViT3D(nn.Module):
     def __init__(
             self,
@@ -29,7 +28,7 @@ class ViT3D(nn.Module):
 
         self.input_size = input_size
         self.patch_size = patch_size
-        self.num_patches = (input_size // patch_size) ** 3
+        self.num_patches = (input_size // patch_size) ** 3  # 14^3 = 2744 patches
 
         logger.info(f"Initializing ViT3D with:")
         logger.info(f"- Input size: {input_size}x{input_size}x{input_size}")
@@ -37,47 +36,52 @@ class ViT3D(nn.Module):
         logger.info(f"- Number of patches: {self.num_patches}")
         logger.info(f"- Number of classes: {num_labels}")
 
-        # Create base configuration
-        self.config = ViTConfig.from_pretrained('google/vit-base-patch16-224-in21k')
-        self.config.patch_size = patch_size
-        self.config.image_size = input_size
-        self.config.num_labels = num_labels
-        self.config.num_patches = self.num_patches
+        # Load pre-trained ViT
+        self.vit = ViTModel.from_pretrained(
+            'google/vit-base-patch16-224-in21k',
+            add_pooling_layer=False,
+            ignore_mismatched_sizes=True
+        )
+        hidden_size = self.vit.config.hidden_size  # 768
 
-        # Create patch embedding
-        self.patch_embed = nn.Conv3d(
-            1,  # input channels
-            self.config.hidden_size,
-            kernel_size=(patch_size, patch_size, patch_size),
-            stride=(patch_size, patch_size, patch_size)
+        # Create 3D patch embedding
+        self.patch_embed = nn.Sequential(
+            # Conv3d to extract patches
+            nn.Conv3d(
+                in_channels=1,
+                out_channels=hidden_size,
+                kernel_size=patch_size,
+                stride=patch_size
+            ),
+            # Reshape to [B, num_patches, hidden_size]
+            Rearrange('b c d h w -> b (d h w) c'),
         )
 
         # Create layernorm
-        self.norm_pre = nn.LayerNorm(self.config.hidden_size)
-        self.norm_post = nn.LayerNorm(self.config.hidden_size)
-
-        # Create transformer encoder
-        self.transformer = ViTModel(self.config)
+        self.pre_norm = nn.LayerNorm(hidden_size)
+        self.post_norm = nn.LayerNorm(hidden_size)
 
         # Create CLS token and position embeddings
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, self.config.hidden_size))
-        self.pos_embed = nn.Parameter(
-            torch.zeros(1, self.num_patches + 1, self.config.hidden_size)
-        )
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, hidden_size))
+        self.pos_embed = nn.Parameter(torch.zeros(1, self.num_patches + 1, hidden_size))
 
         # Dropout and classification head
         self.dropout = nn.Dropout(dropout_rate)
         self.fc = nn.Sequential(
-            nn.Linear(self.config.hidden_size, self.config.hidden_size),
+            nn.Linear(hidden_size, hidden_size),
             nn.GELU(),
             nn.Dropout(dropout_rate),
-            nn.Linear(self.config.hidden_size, num_labels)
+            nn.Linear(hidden_size, num_labels)
         )
 
         # Initialize weights
         self._init_weights()
 
-        # Freeze layers if specified
+        # Use transformers layers directly
+        self.encoder = self.vit.encoder
+        self.layernorm = self.vit.layernorm
+
+        # Freeze pre-trained layers if specified
         if freeze_layers:
             self._freeze_pretrained_layers()
 
@@ -92,10 +96,10 @@ class ViT3D(nn.Module):
         nn.init.trunc_normal_(self.cls_token, std=0.02)
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
 
-        # Initialize patch embeddings
-        nn.init.kaiming_normal_(self.patch_embed.weight)
-        if self.patch_embed.bias is not None:
-            nn.init.zeros_(self.patch_embed.bias)
+        # Initialize conv layer
+        nn.init.trunc_normal_(self.patch_embed[0].weight, std=0.02)
+        if self.patch_embed[0].bias is not None:
+            nn.init.zeros_(self.patch_embed[0].bias)
 
         # Initialize fc layers
         for layer in self.fc:
@@ -105,53 +109,51 @@ class ViT3D(nn.Module):
                     nn.init.zeros_(layer.bias)
 
     def _freeze_pretrained_layers(self):
-        """Freeze pretrained layers."""
-        for param in self.transformer.parameters():
+        """Freeze pretrained transformer layers."""
+        for param in self.encoder.parameters():
             param.requires_grad = False
-
-        # Unfreeze task-specific layers
-        for param in self.patch_embed.parameters():
-            param.requires_grad = True
-        self.cls_token.requires_grad = True
-        self.pos_embed.requires_grad = True
-        for param in self.fc.parameters():
-            param.requires_grad = True
+        for param in self.layernorm.parameters():
+            param.requires_grad = False
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass of the model."""
-        # Input shape: [B, C, D, H, W]
-        B = x.shape[0]
+        B = x.shape[0]  # Batch size
 
-        # Patch embedding: [B, C, D, H, W] -> [B, hidden_size, D', H', W']
+        # Extract and embed patches: [B, 1, 224, 224, 224] -> [B, 2744, 768]
         x = self.patch_embed(x)
 
-        # Flatten patches: [B, hidden_size, D', H', W'] -> [B, num_patches, hidden_size]
-        x = x.flatten(2).transpose(1, 2)
-
-        # Apply pre-norm
-        x = self.norm_pre(x)
-
-        # Add CLS token
+        # Add CLS token: [B, 2744, 768] -> [B, 2745, 768]
         cls_tokens = self.cls_token.expand(B, -1, -1)
         x = torch.cat((cls_tokens, x), dim=1)
 
-        # Add position embeddings
+        # Add position embeddings and normalize
         x = x + self.pos_embed
+        x = self.pre_norm(x)
         x = self.dropout(x)
 
-        # Apply transformer (using the transformer's encoder directly)
-        encoder_outputs = self.transformer.encoder(x)
-        x = encoder_outputs[0] if isinstance(encoder_outputs, tuple) else encoder_outputs
+        # Pass through transformer encoder directly
+        encoder_outputs = self.encoder(x)
+        sequence_output = encoder_outputs[0]
 
-        # Use CLS token for classification
-        x = x[:, 0]
+        # Apply final layernorm (from ViT)
+        sequence_output = self.layernorm(sequence_output)
 
-        # Apply final norm and classification
-        x = self.norm_post(x)
+        # Take CLS token output and classify
+        x = sequence_output[:, 0]
+        x = self.post_norm(x)
         x = self.dropout(x)
         x = self.fc(x)
 
         return x
+
+
+class Rearrange(nn.Module):
+    def __init__(self, pattern):
+        super().__init__()
+        self.pattern = pattern
+
+    def forward(self, x):
+        return x.permute(0, 2, 3, 4, 1).reshape(x.size(0), -1, x.size(1))
 
 
 def create_model(config: dict) -> nn.Module:

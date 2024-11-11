@@ -32,52 +32,9 @@ class AverageMeter:
         self.count += n
         self.avg = self.sum / self.count
 
-class EarlyStopping:
-    """Early stopping handler."""
-    def __init__(self, patience: int = 7, min_delta: float = 0):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.counter = 0
-        self.best_loss = None
-        self.should_stop = False
-        
-    def __call__(self, val_loss: float) -> bool:
-        if self.best_loss is None:
-            self.best_loss = val_loss
-        elif val_loss > self.best_loss - self.min_delta:
-            self.counter += 1
-            if self.counter >= self.patience:
-                self.should_stop = True
-        else:
-            self.best_loss = val_loss
-            self.counter = 0
-        return self.should_stop
-
-def save_checkpoint(state: Dict[str, Any], is_best: bool, exp_dir: Path) -> None:
-    """Save model checkpoint."""
-    checkpoint_path = exp_dir / 'checkpoints' / 'last_checkpoint.pt'
-    torch.save(state, checkpoint_path)
-    if is_best:
-        best_path = exp_dir / 'checkpoints' / 'best_model.pt'
-        torch.save(state, best_path)
-        logger.info(f"Saved best model checkpoint to {best_path}")
-
-def plot_training_progress(train_losses: list, val_losses: list, exp_dir: Path) -> None:
-    """Plot and save training progress."""
-    plt.figure(figsize=(10, 5))
-    plt.plot(train_losses, label='Train Loss')
-    plt.plot(val_losses, label='Validation Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.title('Training Progress')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(exp_dir / 'results' / 'training_progress.png')
-    plt.close()
-
 def train_epoch(
     model: nn.Module,
-    train_loader: torch.utils.data.DataLoader,
+    loader: torch.utils.data.DataLoader,
     criterion: nn.Module,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
@@ -87,8 +44,9 @@ def train_epoch(
     model.train()
     losses = AverageMeter()
     
-    pbar = tqdm(train_loader, desc=f'Epoch {epoch + 1}', leave=False)
+    pbar = tqdm(loader, desc=f'Epoch {epoch + 1}')
     for batch_idx, batch in enumerate(pbar):
+        # Get data
         images = batch['image'].to(device)
         labels = batch['label'].to(device)
         
@@ -110,31 +68,26 @@ def train_epoch(
 @torch.no_grad()
 def validate(
     model: nn.Module,
-    val_loader: torch.utils.data.DataLoader,
+    loader: torch.utils.data.DataLoader,
     criterion: nn.Module,
     device: torch.device
 ) -> float:
     """Validate the model."""
     model.eval()
     losses = AverageMeter()
-    correct = 0
-    total = 0
     
-    for batch in tqdm(val_loader, desc='Validating', leave=False):
+    for batch in tqdm(loader, desc='Validating'):
+        # Get data
         images = batch['image'].to(device)
         labels = batch['label'].to(device)
         
+        # Forward pass
         outputs = model(images)
         loss = criterion(outputs, labels)
         
         # Update statistics
         losses.update(loss.item(), images.size(0))
-        _, predicted = outputs.max(1)
-        total += labels.size(0)
-        correct += predicted.eq(labels).sum().item()
     
-    accuracy = 100. * correct / total
-    logger.info(f'Validation Accuracy: {accuracy:.2f}%')
     return losses.avg
 
 def train_model(
@@ -161,12 +114,6 @@ def train_model(
         eta_min=config['training']['scheduler'].get('min_lr', 1e-6)
     )
     
-    # Setup early stopping
-    early_stopping = EarlyStopping(
-        patience=config['training']['early_stopping']['patience'],
-        min_delta=config['training']['early_stopping']['min_delta']
-    )
-    
     # Training loop
     best_val_loss = float('inf')
     train_losses = []
@@ -174,10 +121,7 @@ def train_model(
     
     for epoch in range(config['training']['epochs']):
         # Train
-        train_loss = train_epoch(
-            model, train_loader, criterion, optimizer,
-            device, epoch
-        )
+        train_loss = train_epoch(model, train_loader, criterion, optimizer, device, epoch)
         train_losses.append(train_loss)
         
         # Validate
@@ -197,20 +141,44 @@ def train_model(
         # Save checkpoint
         is_best = val_loss < best_val_loss
         best_val_loss = min(val_loss, best_val_loss)
-        save_checkpoint({
+        
+        checkpoint = {
             'epoch': epoch + 1,
             'state_dict': model.state_dict(),
             'optimizer': optimizer.state_dict(),
             'scheduler': scheduler.state_dict(),
             'best_val_loss': best_val_loss,
             'config': config
-        }, is_best, exp_dir)
+        }
         
-        # Early stopping
-        if early_stopping(val_loss):
-            logger.info(f'Early stopping triggered after epoch {epoch + 1}')
-            break
-    
-    # Plot training progress
-    plot_training_progress(train_losses, val_losses, exp_dir)
+        if is_best:
+            torch.save(checkpoint, exp_dir / 'checkpoints' / 'best_model.pt')
+            logger.info(f'Saved best model with val_loss: {best_val_loss:.4f}')
+        
+        torch.save(checkpoint, exp_dir / 'checkpoints' / 'last_model.pt')
+        
+        # Plot progress
+        plot_training_progress(
+            train_losses, 
+            val_losses,
+            exp_dir / 'results' / 'training_progress.png'
+        )
+        
     logger.info('Training completed')
+
+def plot_training_progress(
+    train_losses: list,
+    val_losses: list,
+    save_path: Path
+) -> None:
+    """Plot and save training progress."""
+    plt.figure(figsize=(10, 5))
+    plt.plot(train_losses, label='Train Loss')
+    plt.plot(val_losses, label='Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training Progress')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(save_path)
+    plt.close()

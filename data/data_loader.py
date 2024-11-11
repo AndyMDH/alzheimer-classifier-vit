@@ -24,18 +24,63 @@ from monai.transforms import (
     RandRotate90d,
     RandFlipd,
     RandAffined,
-    RandGaussianNoised
+    RandGaussianNoised,
+    EnsureTyped,
+    ToTensord
 )
 import logging
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
+def collate_fn(batch):
+    """
+    Custom collate function to ensure proper batch dimension and tensor types.
+    Must be defined at module level for multiprocessing to work.
+
+    Args:
+        batch: List of samples from the dataset
+
+    Returns:
+        Dict containing batched tensors
+    """
+    batch_data = {}
+    for key in batch[0].keys():
+        if key == 'image':
+            # Stack images and ensure 5D shape [B, C, D, H, W]
+            images = torch.stack([item[key] for item in batch])
+            if len(images.shape) == 4:  # [B, D, H, W]
+                images = images.unsqueeze(1)  # Add channel dimension
+            batch_data[key] = images
+        else:
+            batch_data[key] = torch.tensor([item[key] for item in batch])
+    return batch_data
+
 def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
     """Load configuration from YAML file."""
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     return config
+
+class ShapeCheckd(object):
+    """Custom transform to verify tensor shapes."""
+
+    def __init__(self, keys: List[str]):
+        self.keys = keys
+
+    def __call__(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        d = dict(data)
+        for key in self.keys:
+            if key in d:
+                img = d[key]
+                if isinstance(img, torch.Tensor):
+                    if len(img.shape) != 4:  # [C, D, H, W]
+                        logger.warning(f"Unexpected shape in {key}: {img.shape}")
+                        if len(img.shape) == 3:  # [D, H, W]
+                            img = img.unsqueeze(0)  # Add channel dim
+                            d[key] = img
+                    logger.debug(f"Shape after checking {key}: {img.shape}")
+        return d
 
 class ADNIDataset(Dataset):
     """Custom Dataset for loading ADNI data."""
@@ -48,7 +93,7 @@ class ADNIDataset(Dataset):
     ):
         """
         Initialize the dataset.
-        
+
         Args:
             config: Configuration dictionary
             transform: MONAI transforms to apply
@@ -59,23 +104,23 @@ class ADNIDataset(Dataset):
         self.split = split
         self.file_list = self._create_file_list()
         self.label_to_idx = {'AD': 0, 'CN': 1, 'MCI': 2}
-        
+
         logger.info(f"Initialized {split} dataset with {len(self.file_list)} samples")
-        
+
     def _create_file_list(self) -> List[Tuple[Path, str]]:
         """Create list of file paths and labels."""
         file_list = []
         raw_dir = self.data_root / 'raw'
-        
+
         for label in ['AD', 'CN', 'MCI']:
             label_dir = raw_dir / label
             if not label_dir.exists():
                 logger.warning(f"Directory not found: {label_dir}")
                 continue
-                
+
             for file_path in label_dir.glob('*.nii*'):
                 file_list.append((file_path, label))
-                
+
         if not file_list:
             raise RuntimeError(f"No .nii or .nii.gz files found in {raw_dir}")
         return file_list
@@ -86,18 +131,18 @@ class ADNIDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         """Get a sample from the dataset."""
         file_path, label = self.file_list[idx]
-        
+
         try:
             data_dict = {
                 'image': str(file_path),
                 'label': self.label_to_idx[label]
             }
-            
+
             if self.transform:
                 data_dict = self.transform(data_dict)
-                
+
             return data_dict
-            
+
         except Exception as e:
             logger.error(f"Error loading {file_path}: {str(e)}")
             raise
@@ -105,15 +150,13 @@ class ADNIDataset(Dataset):
 def get_transforms(config: Dict[str, Any], split: str) -> Compose:
     """
     Get preprocessing transforms based on configuration.
-    
+
     Args:
         config: Configuration dictionary
         split: Dataset split ('train', 'val', or 'test')
     """
-    # Get spatial size
     spatial_size = (config['dataset']['input_size'],) * 3
-    
-    # Common transforms for all splits
+
     common_transforms = [
         LoadImaged(keys=["image"]),
         EnsureChannelFirstd(keys=["image"]),
@@ -133,9 +176,12 @@ def get_transforms(config: Dict[str, Any], split: str) -> Compose:
             spatial_size=spatial_size
         ),
         ScaleIntensityd(keys=["image"]),
-        NormalizeIntensityd(keys=["image"], nonzero=True)
+        NormalizeIntensityd(keys=["image"], nonzero=True),
+        EnsureTyped(keys=["image", "label"]),
+        ToTensord(keys=["image", "label"]),
+        ShapeCheckd(keys=["image"])
     ]
-    
+
     # Add augmentation for training
     if split == 'train':
         augmentation_transforms = [
@@ -166,7 +212,7 @@ def get_transforms(config: Dict[str, Any], split: str) -> Compose:
         transforms = common_transforms + augmentation_transforms
     else:
         transforms = common_transforms
-    
+
     return Compose(transforms)
 
 def create_data_loaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, DataLoader]:
@@ -175,16 +221,16 @@ def create_data_loaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader,
     train_transforms = get_transforms(config, 'train')
     val_transforms = get_transforms(config, 'val')
     test_transforms = get_transforms(config, 'test')
-    
+
     # Create datasets
     train_dataset = ADNIDataset(config, transform=train_transforms, split='train')
-    
+
     # Split data
     train_size = 1 - config['dataset']['val_ratio'] - config['dataset']['test_ratio']
-    
+
     # Get all labels for stratification
     labels = [label for _, label in train_dataset.file_list]
-    
+
     # Create splits
     train_idx, temp_idx = train_test_split(
         range(len(train_dataset)),
@@ -192,42 +238,55 @@ def create_data_loaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader,
         stratify=labels,
         random_state=config['training']['seed']
     )
-    
-    val_size = len(temp_idx) // 2
+
     val_idx, test_idx = train_test_split(
         temp_idx,
         test_size=0.5,
         stratify=[labels[i] for i in temp_idx],
         random_state=config['training']['seed']
     )
-    
+
+    # Determine number of workers based on OS
+    num_workers = 0 if os.name == 'nt' else 4  # Use 0 workers on Windows for debugging
+
     # Create data loaders
     train_loader = DataLoader(
-        Subset(ADNIDataset(config, transform=train_transforms), train_idx),
+        Subset(train_dataset, train_idx),
         batch_size=config['dataset']['batch_size'],
         shuffle=True,
-        num_workers=4,
-        pin_memory=True
+        num_workers=num_workers,
+        pin_memory=True,
+        collate_fn=collate_fn
     )
-    
+
     val_loader = DataLoader(
         Subset(ADNIDataset(config, transform=val_transforms), val_idx),
         batch_size=config['dataset']['batch_size'],
         shuffle=False,
-        num_workers=4,
-        pin_memory=True
+        num_workers=num_workers,
+        pin_memory=True,
+        collate_fn=collate_fn
     )
-    
+
     test_loader = DataLoader(
         Subset(ADNIDataset(config, transform=test_transforms), test_idx),
         batch_size=config['dataset']['batch_size'],
         shuffle=False,
-        num_workers=4,
-        pin_memory=True
+        num_workers=num_workers,
+        pin_memory=True,
+        collate_fn=collate_fn
     )
-    
+
     # Log split sizes
     logger.info(f"Dataset splits - Train: {len(train_idx)}, "
                 f"Val: {len(val_idx)}, Test: {len(test_idx)}")
+
+    # Verify shapes of the first batch
+    try:
+        train_batch = next(iter(train_loader))
+        logger.info(f"Train batch image shape: {train_batch['image'].shape}")
+        logger.info(f"Train batch label shape: {train_batch['label'].shape}")
+    except Exception as e:
+        logger.warning(f"Could not verify train batch shapes: {str(e)}")
     
     return train_loader, val_loader, test_loader

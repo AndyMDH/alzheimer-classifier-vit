@@ -2,20 +2,17 @@
 Main script for Alzheimer's detection using Vision Transformers.
 """
 
-import os
 import sys
 import argparse
 import yaml
+import logging
 from pathlib import Path
 import torch
-import logging
 import random
 import numpy as np
 from datetime import datetime
 from models.architectures import create_model
-from data.data_loader import create_data_loaders, load_config
-from models.train import train_model
-from models.evaluate import evaluate_model
+from data.data_loader import create_data_loaders
 
 # Configure logging
 logging.basicConfig(
@@ -28,6 +25,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+def load_config(config_path: str = "config.yaml") -> dict:
+    """Load configuration from YAML file."""
+    with open(config_path, 'r') as f:
+        return yaml.safe_load(f)
+
+
 def set_seed(seed: int) -> None:
     """Set random seeds for reproducibility."""
     random.seed(seed)
@@ -37,6 +41,7 @@ def set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+
 
 def setup_experiment(config: dict) -> Path:
     """Setup experiment directories and logging."""
@@ -81,7 +86,143 @@ def setup_experiment(config: dict) -> Path:
         logger.error(f"Error in setup_experiment: {str(e)}")
         raise
 
-def main() -> None:
+
+def validate(model, val_loader, criterion, device):
+    """Validate the model."""
+    model.eval()
+    val_loss = 0.0
+    correct = 0
+    total = 0
+
+    with torch.no_grad():
+        for batch in val_loader:
+            images = batch['image'].to(device)
+            labels = batch['label'].to(device)
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+            
+            val_loss += loss.item()
+            _, predicted = outputs.max(1)
+            total += labels.size(0)
+            correct += predicted.eq(labels).sum().item()
+
+    return val_loss / len(val_loader), 100. * correct / total
+
+
+def train_model(model, train_loader, val_loader, config, device, exp_dir):
+    """Training loop."""
+    try:
+        # Initialize optimizer and criterion
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=config['training']['learning_rate'],
+            weight_decay=config['training']['optimizer']['weight_decay']
+        )
+        criterion = torch.nn.CrossEntropyLoss()
+        
+        # Initialize tracking variables
+        best_val_acc = 0.0
+        best_val_loss = float('inf')
+        val_losses = []
+        checkpoint_dir = exp_dir / 'checkpoints'
+        
+        # Training loop
+        for epoch in range(config['training']['epochs']):
+            # Training phase
+            model.train()
+            running_loss = 0.0
+            correct = 0
+            total = 0
+            
+            for batch_idx, batch in enumerate(train_loader):
+                # Get data
+                images = batch['image'].to(device)
+                labels = batch['label'].to(device)
+                
+                # Forward pass
+                optimizer.zero_grad()
+                outputs = model(images)
+                loss = criterion(outputs, labels)
+                
+                # Backward pass
+                loss.backward()
+                optimizer.step()
+                
+                # Update statistics
+                running_loss += loss.item()
+                _, predicted = outputs.max(1)
+                total += labels.size(0)
+                correct += predicted.eq(labels).sum().item()
+                
+                # Log progress
+                if batch_idx % 5 == 0:
+                    logger.info(
+                        f'Epoch: {epoch+1}/{config["training"]["epochs"]}, '
+                        f'Batch: {batch_idx}/{len(train_loader)}, '
+                        f'Loss: {loss.item():.4f}, '
+                        f'Acc: {100.*correct/total:.2f}%'
+                    )
+            
+            # Compute epoch statistics
+            train_loss = running_loss / len(train_loader)
+            train_acc = 100. * correct / total
+            
+            # Validation phase
+            val_loss, val_acc = validate(model, val_loader, criterion, device)
+            val_losses.append(val_loss)
+            
+            # Log epoch results
+            logger.info(
+                f'\nEpoch {epoch+1}/{config["training"]["epochs"]}:\n'
+                f'Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%\n'
+                f'Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%\n'
+            )
+            
+            # Save checkpoint
+            checkpoint = {
+                'epoch': epoch + 1,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'train_loss': train_loss,
+                'val_loss': val_loss,
+                'train_acc': train_acc,
+                'val_acc': val_acc,
+                'config': config
+            }
+            
+            # Save latest checkpoint
+            torch.save(
+                checkpoint,
+                checkpoint_dir / f'checkpoint_epoch_{epoch+1}.pt'
+            )
+            
+            # Save best model
+            if val_acc > best_val_acc:
+                best_val_acc = val_acc
+                best_val_loss = val_loss
+                torch.save(
+                    checkpoint,
+                    checkpoint_dir / 'best_model.pt'
+                )
+                logger.info(f'New best model saved with validation accuracy: {val_acc:.2f}%')
+            
+            # Early stopping
+            if config['training'].get('early_stopping', {}).get('enable', False):
+                patience = config['training']['early_stopping']['patience']
+                min_delta = config['training']['early_stopping']['min_delta']
+                if (epoch > patience and 
+                    val_loss > min(val_losses[-patience:]) - min_delta):
+                    logger.info(f'Early stopping triggered at epoch {epoch+1}')
+                    break
+                    
+    except Exception as e:
+        logger.error(f"Error during training: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise
+
+
+def main():
     """Main function to run the training pipeline."""
     parser = argparse.ArgumentParser(description="Alzheimer's Detection Model Training")
     parser.add_argument('--config', type=str, default='config.yaml', 
@@ -106,10 +247,6 @@ def main() -> None:
             
         device = torch.device(config['training']['device'])
         logger.info(f"Using device: {device}")
-        
-        if device.type == 'cuda':
-            logger.info(f"CUDA Device: {torch.cuda.get_device_name(0)}")
-            logger.info(f"CUDA Version: {torch.version.cuda}")
 
         # Set random seed
         set_seed(config['training']['seed'])
@@ -126,16 +263,8 @@ def main() -> None:
         # Create model
         logger.info("Creating model...")
         model = create_model(config)
-        try:
-            model = model.to(device)
-            logger.info(f"Model moved to {device} successfully")
-        except Exception as e:
-            logger.error(f"Error moving model to {device}: {str(e)}")
-            if device.type == 'cuda':
-                logger.info("Falling back to CPU")
-                device = torch.device('cpu')
-                config['training']['device'] = 'cpu'
-                model = model.to(device)
+        model = model.to(device)
+        logger.info(f"Model moved to {device} successfully")
 
         # Train model
         logger.info("Starting training...")
@@ -149,28 +278,13 @@ def main() -> None:
         )
         logger.info("Training completed successfully")
 
-        # Evaluate model
-        logger.info("Starting evaluation...")
-        results = evaluate_model(
-            model=model,
-            test_loader=test_loader,
-            device=device
-        )
-        
-        # Save results
-        results_file = exp_dir / 'results' / 'test_results.yaml'
-        with open(results_file, 'w') as f:
-            yaml.dump(results, f)
-        logger.info(f"Results saved to {results_file}")
-
-        return exp_dir
-
     except Exception as e:
         logger.error(f"Error in main execution: {str(e)}")
         if args.debug:
             import traceback
             traceback.print_exc()
         raise
+
 
 if __name__ == "__main__":
     try:
