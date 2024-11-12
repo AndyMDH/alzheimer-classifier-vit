@@ -1,20 +1,26 @@
 # Model configuration
 model:
-  type: 'multiview_vit'
+  type: 'vit3d'  # Keep this as vit3d for compatibility
   num_labels: 3
   freeze_layers: true
   input_size: 224
-  use_middle_slices: true  # For faster training
-  use_base_model: true    # Use base instead of large model
+  patch_size: 16  # Added this for the new architecture
   dropout_rate: 0.1
   architecture:
-    fusion_hidden_size: 768  # Matches base model size
-    use_simplified_fusion: true  # Use simpler fusion for speed
+    hidden_size: 768
+    num_attention_heads: 12
+    intermediate_size: 3072
+    pretrained_model: 'google/vit-base-patch16-224-in21k'
+    freeze_last_n_layers: 4
+    medical_preprocessing:
+      enable: true
+      kernel_sizes: [7, 5, 1]
+      channels: [16, 32, 3]
 
 # Dataset configuration
 dataset:
   path: './adni'
-  batch_size: 16  # Increased for better utilization
+  batch_size: 16  # Increased batch size
   val_ratio: 0.15
   test_ratio: 0.15
   input_size: 224
@@ -24,55 +30,39 @@ dataset:
     intensity_norm: true
     foreground_crop: true
     crop_margin: 10
-    # Speed optimizations
-    cache_processed: true  # Cache preprocessed data
-    use_memory_cache: true  # Keep frequently used data in memory
-    num_workers: 0  # For CPU training
-    pin_memory: false  # For CPU training
-    prefetch_factor: 2
-    persistent_workers: false
+    medical_augmentation:
+      enable: true
+      rotation_range: [-10, 10]
+      scale_range: [0.95, 1.05]
+      intensity_shift: [-0.1, 0.1]
+      gamma_range: [0.9, 1.1]
 
 # Training configuration
 training:
   epochs: 50
   device: 'cuda'  # will fall back to CPU if not available
   seed: 42
-  batch_size: 16
-  learning_rate: 0.001  # Increased for faster convergence
-
-  # Optimization settings
-  optimization:
-    compile_model: true  # Use torch.compile for speedup
-    gradient_accumulation_steps: 4  # Effective batch size of 64
-    use_amp: false  # Automatic Mixed Precision (set true if using GPU)
-    use_gradient_clipping: true
-    max_gradient_norm: 1.0
-
+  learning_rate: 0.0001
   optimizer:
     type: 'adamw'
     weight_decay: 0.01
     layer_specific_lrs:  # Different learning rates for different components
-      vit: 0.0001
-      fusion: 0.001
-      classifier: 0.001
-
+      vit_backbone: 0.00001
+      medical_preprocessing: 0.0001
+      feature_enhance: 0.0001
+      classifier: 0.0001
   scheduler:
     type: 'cosine'
     T_0: 5
     warmup_epochs: 2
     min_lr: 1.0e-6
-
-  # Early stopping
   early_stopping:
     enable: true
-    patience: 5
+    patience: 10
     min_delta: 0.001
-
-  # Loss settings
   loss:
     type: 'cross_entropy'
     label_smoothing: 0.1
-    class_weights: null  # Can be set if classes are imbalanced
 
 # Paths configuration
 paths:
@@ -82,44 +72,17 @@ paths:
   data:
     raw: './adni/raw'
     processed: './adni/processed'
-    cache: './adni/cache'  # For preprocessed data
     metadata: './metadata/adni.csv'
 
 # Logging configuration
 logging:
   level: 'INFO'
   save_to_file: true
-  log_frequency: 10  # Log every N batches
-  tensorboard:
-    enable: true
-    log_dir: './runs'
-  save_model_frequency: 5  # Save model every N epochs
+  log_frequency: 10
 
-# Performance monitoring
-monitoring:
-  track_memory: true
-  profile_execution: false  # Set to true for debugging performance
-  log_gpu_stats: false
-  batch_timing: true
-
-# Validation configuration
-validation:
-  frequency: 1  # Validate every N epochs
-  metrics:
-    - accuracy
-    - precision
-    - recall
-    - f1
-  save_predictions: true
-
-# Testing configuration
-testing:
-  save_predictions: true
-  save_confusion_matrix: true
-  ensemble_predictions: false
-
-# Memory management
+# Memory management for large medical images
 memory:
-  clear_cache_frequency: 1  # Clear CUDA cache every N batches
-  optimize_memory: true
-  pin_memory: false  # Since using CPU
+  clear_cache_frequency: 1
+  pin_memory: false  # For CPU training
+  num_workers: 0     # For CPU training
+  prefetch_factor: 2
