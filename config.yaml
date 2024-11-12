@@ -1,17 +1,20 @@
 # Model configuration
 model:
-  type: 'multiview_vit'  # Changed to multi-view approach
+  type: 'multiview_vit'
   num_labels: 3
   freeze_layers: true
   input_size: 224
-  model_name: 'google/vit-large-patch16-224-in21k'  # Using larger model
-  dropout_rate: 0.2  # Increased for better regularization
-  use_attention: true  # Enable attention-based slice selection
+  use_middle_slices: true  # For faster training
+  use_base_model: true    # Use base instead of large model
+  dropout_rate: 0.1
+  architecture:
+    fusion_hidden_size: 768  # Matches base model size
+    use_simplified_fusion: true  # Use simpler fusion for speed
 
 # Dataset configuration
 dataset:
   path: './adni'
-  batch_size: 8
+  batch_size: 16  # Increased for better utilization
   val_ratio: 0.15
   test_ratio: 0.15
   input_size: 224
@@ -21,45 +24,55 @@ dataset:
     intensity_norm: true
     foreground_crop: true
     crop_margin: 10
-    # Added preprocessing specific to multi-view
-    slice_selection:
-      method: 'attention'  # Can be 'center', 'attention', or 'multi'
-      num_slices: 5  # Number of slices to consider for attention
-    augmentation:
-      enable: true
-      rotation_range: 10
-      contrast_range: [0.9, 1.1]
-      brightness_range: [0.9, 1.1]
-      noise_std: 0.02
+    # Speed optimizations
+    cache_processed: true  # Cache preprocessed data
+    use_memory_cache: true  # Keep frequently used data in memory
+    num_workers: 0  # For CPU training
+    pin_memory: false  # For CPU training
+    prefetch_factor: 2
+    persistent_workers: false
 
 # Training configuration
 training:
-  epochs: 100  # Increased epochs since training is more stable
+  epochs: 50
   device: 'cuda'  # will fall back to CPU if not available
   seed: 42
-  learning_rate: 0.0001
+  batch_size: 16
+  learning_rate: 0.001  # Increased for faster convergence
+
+  # Optimization settings
+  optimization:
+    compile_model: true  # Use torch.compile for speedup
+    gradient_accumulation_steps: 4  # Effective batch size of 64
+    use_amp: false  # Automatic Mixed Precision (set true if using GPU)
+    use_gradient_clipping: true
+    max_gradient_norm: 1.0
+
   optimizer:
     type: 'adamw'
     weight_decay: 0.01
-    layer_specific_lrs:  # Different learning rates for different parts
-      vit: 0.00001  # Lower LR for pretrained parts
-      attention: 0.0001
-      fusion: 0.0001
-      classifier: 0.0001
+    layer_specific_lrs:  # Different learning rates for different components
+      vit: 0.0001
+      fusion: 0.001
+      classifier: 0.001
+
   scheduler:
     type: 'cosine'
-    T_0: 10  # Increased period
-    warmup_epochs: 5  # More warmup epochs
+    T_0: 5
+    warmup_epochs: 2
     min_lr: 1.0e-6
+
+  # Early stopping
   early_stopping:
     enable: true
-    patience: 10
+    patience: 5
     min_delta: 0.001
-  gradient_clipping:
-    enable: true
-    max_norm: 1.0
-  label_smoothing: 0.1  # Added label smoothing
-  mixed_precision: true  # Enable mixed precision training
+
+  # Loss settings
+  loss:
+    type: 'cross_entropy'
+    label_smoothing: 0.1
+    class_weights: null  # Can be set if classes are imbalanced
 
 # Paths configuration
 paths:
@@ -69,39 +82,44 @@ paths:
   data:
     raw: './adni/raw'
     processed: './adni/processed'
+    cache: './adni/cache'  # For preprocessed data
     metadata: './metadata/adni.csv'
 
 # Logging configuration
 logging:
   level: 'INFO'
   save_to_file: true
-  log_frequency: 10
-  wandb:  # Added W&B integration
+  log_frequency: 10  # Log every N batches
+  tensorboard:
     enable: true
-    project: 'alzheimer_detection'
-    tags: ['multiview', 'vit-large']
-    log_images: true  # Log attention maps and predictions
+    log_dir: './runs'
+  save_model_frequency: 5  # Save model every N epochs
+
+# Performance monitoring
+monitoring:
+  track_memory: true
+  profile_execution: false  # Set to true for debugging performance
+  log_gpu_stats: false
+  batch_timing: true
 
 # Validation configuration
 validation:
-  frequency: 1  # Validate every epoch
+  frequency: 1  # Validate every N epochs
   metrics:
     - accuracy
     - precision
     - recall
     - f1
-    - confusion_matrix
   save_predictions: true
-  save_attention_maps: true  # Save attention maps for visualization
 
 # Testing configuration
 testing:
   save_predictions: true
-  ensemble:
-    enable: true
-    num_models: 3  # Use ensemble of last 3 checkpoints
-  visualization:
-    enable: true
-    attention_maps: true
-    confusion_matrix: true
-    misclassified_samples: true
+  save_confusion_matrix: true
+  ensemble_predictions: false
+
+# Memory management
+memory:
+  clear_cache_frequency: 1  # Clear CUDA cache every N batches
+  optimize_memory: true
+  pin_memory: false  # Since using CPU
