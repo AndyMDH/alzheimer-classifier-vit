@@ -1,46 +1,45 @@
-# Model Configurations
+# Model configuration
 model:
-  # Shared settings
+  type: 'vit2d'
   num_labels: 3
-  input_size: 224
-  dropout_rate: 0.1
   freeze_layers: true
+  input_size: 224
+  patch_size: 16
+  dropout_rate: 0.1
 
   # Model specific settings
-  vit3d:
-    type: 'vit3d'
-    patch_sizes: [8, 16, 32]  # Different patch sizes to try
-    pretrained: 'google/vit-base-patch16-224-in21k'
-
   vit2d:
-    type: 'vit2d'
-    patch_sizes: [8, 16, 32]
     pretrained: 'google/vit-base-patch16-224-in21k'
-    slice_mode: 'center'  # or 'average'
+    hidden_size: 768
+    intermediate_size: 3072
+    num_attention_heads: 12
+
+  vit3d:
+    pretrained: 'google/vit-base-patch16-224-in21k'
+    hidden_size: 768
+    use_memory_efficient: true
 
   cnn3d:
-    type: 'cnn3d'
-    patch_sizes: [8, 16, 32]
-    pretrained: 'resnet50'  # Will use inflated ResNet
-    channels: [64, 128, 256, 512]
+    pretrained: true
+    base_channels: 64
+    num_blocks: [3, 4, 6, 3]
 
 # Dataset configuration
 dataset:
   path: './adni'
-  batch_size: 8
+  batch_size: 16
   val_ratio: 0.15
   test_ratio: 0.15
+  input_size: 224
   preprocessing:
     voxel_spacing: [1.5, 1.5, 1.5]
     orientation: 'RAS'
     intensity_norm: true
     foreground_crop: true
     crop_margin: 10
-    # 2D specific
     slice_selection:
       method: 'center'  # or 'average'
       num_slices: 5
-    # Data augmentation
     augmentation:
       enable: true
       rotation_range: [-10, 10]
@@ -52,42 +51,38 @@ training:
   epochs: 50
   device: 'cuda'  # will fall back to CPU
   seed: 42
-  base_learning_rate: 0.0001
-  layer_specific_lrs:
-    pretrained: 0.00001
-    new: 0.0001
+  learning_rate: 0.0001
   optimizer:
     type: 'adamw'
     weight_decay: 0.01
+    layer_specific_lrs:
+      pretrained: 0.00001
+      new: 0.0001
   scheduler:
     type: 'cosine'
+    T_0: 10  # Added for cosine annealing
+    T_mult: 2
+    eta_min: 1e-6
     warmup_epochs: 2
-    min_lr: 1.0e-6
   early_stopping:
     patience: 10
     min_delta: 0.001
+  gradient_clipping:
+    enable: true
+    max_norm: 1.0
+  mixed_precision: false
 
-# Experiment tracking
-experiment:
-  name: 'alzheimer_detection_comparison'
-  models_to_run: ['vit3d', 'vit2d', 'cnn3d']
-  metrics:
-    - accuracy
-    - precision
-    - recall
-    - f1
-    - confusion_matrix
-  save_predictions: true
-  save_model: true
-  plot_results: true
-
-# Paths and logging
+# Paths configuration
 paths:
   output_dir: './output'
   log_dir: './logs'
   checkpoint_dir: './checkpoints'
-  results_dir: './results'
+  data:
+    raw: './adni/raw'
+    processed: './adni/processed'
+    metadata: './metadata/adni.csv'
 
+# Logging configuration
 logging:
   level: 'INFO'
   save_to_file: true

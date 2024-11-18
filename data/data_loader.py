@@ -26,86 +26,32 @@ from monai.transforms import (
     RandAffined,
     RandGaussianNoised,
     EnsureTyped,
-    ToTensord
+    ToTensord,
+    Lambda
 )
 import logging
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
-def collate_fn(batch):
-    """
-    Custom collate function to ensure proper batch dimension and tensor types.
-    Must be defined at module level for multiprocessing to work.
-
-    Args:
-        batch: List of samples from the dataset
-
-    Returns:
-        Dict containing batched tensors
-    """
-    batch_data = {}
-    for key in batch[0].keys():
-        if key == 'image':
-            # Stack images and ensure 5D shape [B, C, D, H, W]
-            images = torch.stack([item[key] for item in batch])
-            if len(images.shape) == 4:  # [B, D, H, W]
-                images = images.unsqueeze(1)  # Add channel dimension
-            batch_data[key] = images
-        else:
-            batch_data[key] = torch.tensor([item[key] for item in batch])
-    return batch_data
-
-def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
-    """Load configuration from YAML file."""
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    return config
-
-class ShapeCheckd(object):
-    """Custom transform to verify tensor shapes."""
-
-    def __init__(self, keys: List[str]):
-        self.keys = keys
-
-    def __call__(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        d = dict(data)
-        for key in self.keys:
-            if key in d:
-                img = d[key]
-                if isinstance(img, torch.Tensor):
-                    if len(img.shape) != 4:  # [C, D, H, W]
-                        logger.warning(f"Unexpected shape in {key}: {img.shape}")
-                        if len(img.shape) == 3:  # [D, H, W]
-                            img = img.unsqueeze(0)  # Add channel dim
-                            d[key] = img
-                    logger.debug(f"Shape after checking {key}: {img.shape}")
-        return d
-
 class ADNIDataset(Dataset):
-    """Custom Dataset for loading ADNI data."""
+    """Dataset for loading ADNI data in both 2D and 3D modes."""
 
     def __init__(
         self,
         config: Dict[str, Any],
         transform: Optional[Compose] = None,
-        split: str = 'train'
+        split: str = 'train',
+        mode: str = '3d'
     ):
-        """
-        Initialize the dataset.
-
-        Args:
-            config: Configuration dictionary
-            transform: MONAI transforms to apply
-            split: Dataset split ('train', 'val', or 'test')
-        """
         self.data_root = Path(config['dataset']['path'])
         self.transform = transform
         self.split = split
+        self.mode = mode
         self.file_list = self._create_file_list()
         self.label_to_idx = {'AD': 0, 'CN': 1, 'MCI': 2}
 
-        logger.info(f"Initialized {split} dataset with {len(self.file_list)} samples")
+        logger.info(f"Initialized {split} dataset with {len(self.file_list)} samples in {mode} mode")
 
     def _create_file_list(self) -> List[Tuple[Path, str]]:
         """Create list of file paths and labels."""
@@ -147,15 +93,13 @@ class ADNIDataset(Dataset):
             logger.error(f"Error loading {file_path}: {str(e)}")
             raise
 
-def get_transforms(config: Dict[str, Any], split: str) -> Compose:
-    """
-    Get preprocessing transforms based on configuration.
-
-    Args:
-        config: Configuration dictionary
-        split: Dataset split ('train', 'val', or 'test')
-    """
-    spatial_size = (config['dataset']['input_size'],) * 3
+def get_transforms(config: Dict[str, Any], split: str, mode: str = '3d') -> Compose:
+    """Get transforms based on configuration and mode."""
+    # Set spatial size based on mode
+    if mode == '2d':
+        spatial_size = (config['dataset']['input_size'],) * 2
+    else:
+        spatial_size = (config['dataset']['input_size'],) * 3
 
     common_transforms = [
         LoadImaged(keys=["image"]),
@@ -170,68 +114,109 @@ def get_transforms(config: Dict[str, Any], split: str) -> Compose:
             keys=["image"],
             source_key="image",
             margin=config['dataset']['preprocessing']['crop_margin']
-        ),
-        ResizeWithPadOrCropd(
-            keys=["image"],
-            spatial_size=spatial_size
-        ),
+        )
+    ]
+
+    # Add mode-specific resize
+    if mode == '2d':
+        resize_transform = [
+            # Extract center slice for 2D
+            Lambda(lambda x: {
+                'image': x['image'][:, x['image'].shape[1]//2, :, :]
+                if len(x['image'].shape) == 4
+                else x['image'],
+                'label': x['label']
+            }),
+            ResizeWithPadOrCropd(
+                keys=["image"],
+                spatial_size=spatial_size
+            )
+        ]
+    else:
+        resize_transform = [
+            ResizeWithPadOrCropd(
+                keys=["image"],
+                spatial_size=spatial_size
+            )
+        ]
+
+    # Add remaining transforms
+    post_transforms = [
         ScaleIntensityd(keys=["image"]),
         NormalizeIntensityd(keys=["image"], nonzero=True),
         EnsureTyped(keys=["image", "label"]),
-        ToTensord(keys=["image", "label"]),
-        ShapeCheckd(keys=["image"])
+        ToTensord(keys=["image", "label"])
     ]
+
+    # Combine transforms
+    transforms = common_transforms + resize_transform + post_transforms
 
     # Add augmentation for training
     if split == 'train':
-        augmentation_transforms = [
-            RandRotate90d(
-                keys=["image"],
-                prob=0.5,
-                spatial_axes=(0, 1)
-            ),
-            RandFlipd(
-                keys=["image"],
-                prob=0.5,
-                spatial_axis=0
-            ),
-            RandAffined(
-                keys=["image"],
-                prob=0.5,
-                rotate_range=(np.pi/12, np.pi/12, np.pi/12),
-                scale_range=(0.1, 0.1, 0.1),
-                mode="bilinear"
-            ),
-            RandGaussianNoised(
-                keys=["image"],
-                prob=0.2,
-                mean=0.0,
-                std=0.1
-            )
-        ]
-        transforms = common_transforms + augmentation_transforms
-    else:
-        transforms = common_transforms
+        if mode == '2d':
+            augmentation = [
+                RandRotate90d(
+                    keys=["image"],
+                    prob=0.5,
+                    spatial_axes=(0, 1)
+                ),
+                RandFlipd(
+                    keys=["image"],
+                    prob=0.5,
+                    spatial_axis=0
+                ),
+                RandAffined(
+                    keys=["image"],
+                    prob=0.5,
+                    rotate_range=[np.pi/12] * 2,
+                    scale_range=[0.1] * 2,
+                    mode="bilinear"
+                )
+            ]
+        else:
+            augmentation = [
+                RandRotate90d(
+                    keys=["image"],
+                    prob=0.5,
+                    spatial_axes=(0, 1)
+                ),
+                RandFlipd(
+                    keys=["image"],
+                    prob=0.5,
+                    spatial_axis=0
+                ),
+                RandAffined(
+                    keys=["image"],
+                    prob=0.5,
+                    rotate_range=[np.pi/12] * 3,
+                    scale_range=[0.1] * 3,
+                    mode="bilinear"
+                )
+            ]
+        transforms = transforms + augmentation
 
     return Compose(transforms)
 
-def create_data_loaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, DataLoader]:
-    """Create train, validation, and test data loaders."""
+def create_data_loaders(
+    config: Dict[str, Any],
+    mode: str = '3d'
+) -> Tuple[DataLoader, DataLoader, DataLoader]:
+    """Create data loaders with specified mode."""
+
     # Create transforms
-    train_transforms = get_transforms(config, 'train')
-    val_transforms = get_transforms(config, 'val')
-    test_transforms = get_transforms(config, 'test')
+    train_transforms = get_transforms(config, 'train', mode)
+    val_transforms = get_transforms(config, 'val', mode)
+    test_transforms = get_transforms(config, 'test', mode)
 
     # Create datasets
-    train_dataset = ADNIDataset(config, transform=train_transforms, split='train')
+    train_dataset = ADNIDataset(config, transform=train_transforms, split='train', mode=mode)
+    val_dataset = ADNIDataset(config, transform=val_transforms, split='val', mode=mode)
+    test_dataset = ADNIDataset(config, transform=test_transforms, split='test', mode=mode)
 
     # Split data
     train_size = 1 - config['dataset']['val_ratio'] - config['dataset']['test_ratio']
-
-    # Get all labels for stratification
     labels = [label for _, label in train_dataset.file_list]
 
-    # Create splits
     train_idx, temp_idx = train_test_split(
         range(len(train_dataset)),
         train_size=train_size,
@@ -246,33 +231,48 @@ def create_data_loaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader,
         random_state=config['training']['seed']
     )
 
-    # Determine number of workers based on OS
-    num_workers = 0 if os.name == 'nt' else 4  # Use 0 workers on Windows for debugging
+    def collate_fn(batch):
+        batch_data = {}
+        for key in batch[0].keys():
+            if key == 'image':
+                # Stack images
+                images = torch.stack([item[key] for item in batch])
 
-    # Create data loaders
+                # Handle channel dimension based on mode
+                if mode == '2d' and len(images.shape) == 3:  # [B, H, W]
+                    images = images.unsqueeze(1)  # Add channel dim [B, C, H, W]
+                elif mode == '3d' and len(images.shape) == 4:  # [B, D, H, W]
+                    images = images.unsqueeze(1)  # Add channel dim [B, C, D, H, W]
+
+                batch_data[key] = images
+            else:
+                batch_data[key] = torch.tensor([item[key] for item in batch])
+        return batch_data
+
+    # Create loaders
     train_loader = DataLoader(
         Subset(train_dataset, train_idx),
         batch_size=config['dataset']['batch_size'],
         shuffle=True,
-        num_workers=num_workers,
+        num_workers=0 if os.name == 'nt' else 4,
         pin_memory=True,
         collate_fn=collate_fn
     )
 
     val_loader = DataLoader(
-        Subset(ADNIDataset(config, transform=val_transforms), val_idx),
+        Subset(val_dataset, val_idx),
         batch_size=config['dataset']['batch_size'],
         shuffle=False,
-        num_workers=num_workers,
+        num_workers=0 if os.name == 'nt' else 4,
         pin_memory=True,
         collate_fn=collate_fn
     )
 
     test_loader = DataLoader(
-        Subset(ADNIDataset(config, transform=test_transforms), test_idx),
+        Subset(test_dataset, test_idx),
         batch_size=config['dataset']['batch_size'],
         shuffle=False,
-        num_workers=num_workers,
+        num_workers=0 if os.name == 'nt' else 4,
         pin_memory=True,
         collate_fn=collate_fn
     )
@@ -281,12 +281,13 @@ def create_data_loaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader,
     logger.info(f"Dataset splits - Train: {len(train_idx)}, "
                 f"Val: {len(val_idx)}, Test: {len(test_idx)}")
 
-    # Verify shapes of the first batch
+    # Verify shapes
     try:
         train_batch = next(iter(train_loader))
-        logger.info(f"Train batch image shape: {train_batch['image'].shape}")
+        expected_shape = "B, C, H, W" if mode == '2d' else "B, C, D, H, W"
+        logger.info(f"Train batch image shape ({expected_shape}): {train_batch['image'].shape}")
         logger.info(f"Train batch label shape: {train_batch['label'].shape}")
     except Exception as e:
         logger.warning(f"Could not verify train batch shapes: {str(e)}")
-    
+
     return train_loader, val_loader, test_loader
